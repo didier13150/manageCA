@@ -30,7 +30,7 @@ function printMenu() {
 	echo ""
 	echo "   1) Create a client certificate (PKCS#10)"
 	echo "   2) Create a Client Certificate for Web (PKCS#12)"
-	echo "   2) Renew a Server Certificate (PEM SelfSigned)"
+	echo "   3) Renew a Server Certificate (PEM SelfSigned)"
 	echo "   4) Revoke a Client Certificate"
 	echo "   5) List Client Certificates"
 	echo ""
