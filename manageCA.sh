@@ -93,18 +93,14 @@ function addUser() {
 	local user
 	local email
 	printSubMenu "Create a client certificate"
-	read -p "User name: " user
-	if [[ "$user" == "" ]]
+	read -p "User name [NONE]: " user
+	if [[ "${user}" == "" ]]
 	then
-		echo "Error: Name cannot be empty"
-		read -p "Press [enter] to continue" DUMMY
 		return
 	fi
-	read -p "User email: " email
-	if [[ "$email" == "" ]]
+	read -p "User email [NONE]: " email
+	if [[ "${email}" == "" ]]
 	then
-		echo "Error: email cannot be empty"
-		read -p "Press [enter] to continue" DUMMY
 		return
 	fi 
 	openssl genrsa -out ${PKI_PATH}/${NAME}/certs/${user}.key 2048 \
@@ -130,13 +126,12 @@ function addUser() {
 }
 
 function webUser() {
+	local user
 	printSubMenu "Create a Client Certificate for Web"
 	printUserList
-	read -p "User name: " user
-	if [[ "$user" == "" ]]
+	read -p "User name [NONE]: " user
+	if [[ "${user}" == "" ]]
 	then
-		echo "Error encoured: Name cannot be empty"
-		read -p "Press [enter] to continue" DUMMY
 		return
 	fi
 	if [ -f ${PKI_PATH}/${NAME}/certs/${user}.crt ]
@@ -153,15 +148,17 @@ function webUser() {
 }
 
 function renewUser() {
+	local user
 	printSubMenu "Renew a Server Certificate"
 	printUserList
-	read -p "User name: " user
-	if [[ "$user" == "" ]]
+	read -p "User name [NONE]: " user
+	if [[ "${user}" == "" ]]
 	then
 		echo "Error: Name cannot be empty"
 		read -p "Press [enter] to continue" DUMMY
 		return
 	fi
+	revokeUser ${user}
 	openssl ca -config ${PKI_PATH}/${NAME}/confs/${user}-ssl.cnf \
         -out ${PKI_PATH}/${NAME}/certs/${user}.crt \
         -outdir ${PKI_PATH}/${NAME}/certs \
@@ -170,13 +167,12 @@ function renewUser() {
 }
 
 function revokeUser() {
+	local user=$1
 	printSubMenu "Revoke a Client Certificate"
 	printUserList
-	read -p "User name: " user
-	if [[ "$user" == "" ]]
+	[ -z ${user} ] && read -p "User name [NONE]: " user
+	if [[ "${user}" == "" ]]
 	then
-		echo "Error: Name cannot be empty"
-		read -p "Press [enter] to continue" DUMMY
 		return
 	fi
 	openssl ca -revoke ${PKI_PATH}/${NAME}/certs/${user}.crt \
@@ -184,7 +180,7 @@ function revokeUser() {
 	openssl ca -gencrl -config ${PKI_PATH}/${NAME}/ssl.cnf \
 		-out ${PKI_PATH}/${NAME}/crl.pem
 	echo "Don't forget to reload Apache"
-	read -p "Press [enter] to continue" DUMMY
+	[ -z ${1} ] read -p "Press [enter] to continue" DUMMY
 }
 
 function listUser() {
