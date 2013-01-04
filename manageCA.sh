@@ -164,7 +164,8 @@ function renewUser() {
 	fi
 	openssl ca -config ${PKI_PATH}/${NAME}/confs/${user}-ssl.cnf \
         -out ${PKI_PATH}/${NAME}/certs/${user}.crt \
-        -outdir ${PKI_PATH}/${NAME}/certs -infiles certs/${user}.csr
+        -outdir ${PKI_PATH}/${NAME}/certs \
+        -infiles ${PKI_PATH}/${NAME}/certs/${user}.csr
 	read -p "Press [enter] to continue" DUMMY
 }
 
@@ -256,8 +257,8 @@ function initCA() {
 	[ -f ${PKI_PATH}/${NAME}/crl.pem ] || openssl ca -gencrl \
 		-config ${PKI_PATH}/${NAME}/ssl.cnf -out ${PKI_PATH}/${NAME}/crl.pem
 	ln ${PKI_PATH}/${NAME}/crl.pem ${PKI_PATH}/${NAME}/crl/
-	local hash=`openssl crl -hash -noout -in ${PKI_PATH}/${NAME}/crl.pem`
-	ln -s ${PKI_PATH}/${NAME}/crl.pem ${PKI_PATH}/${NAME}/crl/$hash.r0
+	local hash=`openssl crl -hash -noout -in ${PKI_PATH}/${NAME}/crl/crl.pem`
+	ln -s ${PKI_PATH}/${NAME}/crl/crl.pem ${PKI_PATH}/${NAME}/crl/$hash.r0
 	echo "CA initialized"
 	read -p "Press [enter] to continue" DUMMY
 }
@@ -293,6 +294,7 @@ private_key             = $dir/private/@NAME@_ca.key
 serial                  = $dir/serial
 crl                     = $dir/crl.pem
 crlnumber               = $dir/crlnumber
+crl_extensions          = crl_ext
 x509_extensions         = usr_cert
 name_opt                = ca_default
 cert_opt                = ca_default
@@ -352,6 +354,9 @@ authorityKeyIdentifier          = keyid,issuer:always
 subjectKeyIdentifier            = hash
 authorityKeyIdentifier          = keyid:always,issuer:always
 basicConstraints                = CA:true
+
+[crl_ext]
+authorityKeyIdentifier=keyid:always,issuer:always
 EOF
 
 	sed -i \
