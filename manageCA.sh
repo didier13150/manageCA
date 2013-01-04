@@ -183,6 +183,7 @@ function revokeUser() {
 		-config ${PKI_PATH}/${NAME}/ssl.cnf 
 	openssl ca -gencrl -config ${PKI_PATH}/${NAME}/ssl.cnf \
 		-out ${PKI_PATH}/${NAME}/crl.pem
+	echo "Don't forget to reload Apache"
 	read -p "Press [enter] to continue" DUMMY
 }
 
