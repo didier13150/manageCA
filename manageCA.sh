@@ -222,7 +222,7 @@ function revokeUser() {
 	openssl ca -revoke ${PKI_PATH}/${NAME}/certs/${user}.crt \
 		-config ${PKI_PATH}/${NAME}/ssl.cnf 
 	openssl ca -gencrl -config ${PKI_PATH}/${NAME}/ssl.cnf \
-		-out ${PKI_PATH}/${NAME}/crl.pem
+		-out ${PKI_PATH}/${NAME}/${NAME}_ca.crl
 	echo
 	echo "Don't forget to reload Apache"
 	echo
@@ -302,11 +302,11 @@ function initCA() {
 		-key ${PKI_PATH}/${NAME}/private/${NAME}_ca.key \
 		-out ${PKI_PATH}/${NAME}/${NAME}_ca.crt -extensions v3_ca
 	mv ${PKI_PATH}/${NAME}/ssl2.cnf ${PKI_PATH}/${NAME}/confs/ca.cnf
-	[ -f ${PKI_PATH}/${NAME}/crl.pem ] || openssl ca -gencrl \
-		-config ${PKI_PATH}/${NAME}/ssl.cnf -out ${PKI_PATH}/${NAME}/crl.pem
-	ln ${PKI_PATH}/${NAME}/crl.pem ${PKI_PATH}/${NAME}/crl/
-	local hash=`openssl crl -hash -noout -in ${PKI_PATH}/${NAME}/crl/crl.pem`
-	ln -s ${PKI_PATH}/${NAME}/crl/crl.pem ${PKI_PATH}/${NAME}/crl/$hash.r0
+	[ -f ${PKI_PATH}/${NAME}/${NAME}_ca.crl ] || openssl ca -gencrl \
+		-config ${PKI_PATH}/${NAME}/ssl.cnf -out ${PKI_PATH}/${NAME}/${NAME}_ca.crl
+	ln ${PKI_PATH}/${NAME}/${NAME}_ca.crl ${PKI_PATH}/${NAME}/crl/
+	local hash=`openssl crl -hash -noout -in ${PKI_PATH}/${NAME}/crl/${NAME}_ca.crl`
+	ln -s ${PKI_PATH}/${NAME}/crl/${NAME}_ca.crl ${PKI_PATH}/${NAME}/crl/$hash.r0
 	echo
 	echo "CA initialized"
 	echo
@@ -343,7 +343,7 @@ new_certs_dir           = $dir/newcerts
 certificate             = $dir/@NAME@_ca.crt
 private_key             = $dir/private/@NAME@_ca.key
 serial                  = $dir/serial
-crl                     = $dir/crl.pem
+crl                     = $dir/@NAME@_ca.crl
 crlnumber               = $dir/crlnumber
 crl_extensions          = crl_ext
 x509_extensions         = usr_cert
