@@ -1,16 +1,17 @@
 #!/bin/bash
 ################################################################################
 # Author: Didier Fabert
-# Rev 0.3
+# Rev 0.4
 ################################################################################
 COUNTRYNAME="FR"
 STATE="Languedoc-Roussillon"
 CITY="Beaucaire"
 COMPANY="Home"
-OCSP_URI="http://didier.domicile.org/"
+OCSP_URL="http://didier.domicile.org/"
 
 PKI_PATH="/etc/pki"
 NAME=""
+CFG_FILE="/etc/manageCA.conf"
 
 function printUsage() {
 	echo "$(basename $0)"
@@ -19,6 +20,7 @@ function printUsage() {
 function printHelp() {
 	echo
 	echo "Options:"
+	echo -e "\t-c <NAME>     Config File [${CFG_FILE}]"
 	echo -e "\t-p <PATH>     Path for PKI [/etc/pki]"
 	echo -e "\t-n <NAME>     CA Name [None]"
 }
@@ -29,18 +31,20 @@ function printMenu() {
 	echo "             ${COMPANY} Certificate Management System"
 	echo "====================================================================="
 	echo
-	echo "   1) Create a Client certificate"
-	echo "   2) Create a Web Client Certificate (PKCS#12)"
-	echo "   3) Renew a Server Certificate"
-	echo "   4) Revoke a Client Certificate"
-	echo "   5) List Client Certificates"
+	echo "   1) Create a Client/Server/OCSP certificate"
+	echo "   2) Create a Client Certificate for Web (PKCS#12)"
+	echo "   3) Renew a Certificate"
+	echo "   4) Revoke a Certificate"
+	echo "   5) List Certificates"
 	echo
 	echo "   i) Initialize Root Certificate Authority (CA)"
-	echo "   p) Change default path [${PKI_PATH}]"
-	echo "   p) Change CA name [${NAME}]"
 	echo "   d) Delete CA"
-	echo "   o) Show, modify CA Options"
+	echo "   o) Show/Modify/Save CA Options"
 	echo "   q) Quit"
+	echo
+	echo "   Options available before init"
+	echo "   p) Change PKI default path [${PKI_PATH}]"
+	echo "   n) Change CA name [${NAME}] (Only before creation)"
 	echo
 }
 
@@ -53,7 +57,7 @@ function printSubMenu {
 }
 
 function manageOptions() {
-	local BUFFER
+	local buffer
 	while true;
 	do
 		printSubMenu "CA Options"
@@ -61,38 +65,82 @@ function manageOptions() {
 		echo "   2) State Name [${STATE}]"
 		echo "   3) City Name [${CITY}]"
 		echo "   4) Company Name [${COMPANY}]"
-		echo "   5) OCSP URL [${OCSP_URI}]"
+		echo "   5) OCSP URL [${OCSP_URL}]"
 		echo
+		echo "   s) Save Options"
 		echo "   p) Previous menu"
 		echo
 		read -p " ==> Make your choice [none]: " -n 1 CHOICE
 		echo
+		echo
 		case ${CHOICE} in
 			1)
-				read -p " ==> New Country Name [${COUNTRYNAME}]: " BUFFER
-				if [ ! -z ${BUFFER} ]; then COUNTRYNAME=${BUFFER} ; fi
+				read -p " ==> New Country Name [${COUNTRYNAME}]: " buffer
+				[ ! -z ${buffer} ] && COUNTRYNAME=${buffer}
 				;;
 			2)
-				read -p " ==> New State Name [${STATE}]: " BUFFER
-				if [ ! -z ${BUFFER} ]; then STATE=${BUFFER} ; fi
+				read -p " ==> New State Name [${STATE}]: " buffer
+				[ ! -z ${buffer} ] && STATE=${buffer}
 				;;
 			3)
-				read -p " ==> New City Name [${CITY}]: " BUFFER
-				if [ ! -z ${BUFFER} ]; then CITY=${BUFFER} ; fi
+				read -p " ==> New City Name [${CITY}]: " buffer
+				[ ! -z ${buffer} ] && CITY=${buffer}
 				;;
 			4)
-				read -p " ==> New Company Name [${COMPANY}]: " BUFFER
-				if [ ! -z ${BUFFER} ]; then COMPANY=${BUFFER} ; fi
+				read -p " ==> New Company Name [${COMPANY}]: " buffer
+				[ ! -z ${buffer} ] && COMPANY=${buffer}
 				;;
 			5)
-				read -p " ==> New OCSP URL [${OCSP_URI}]: " BUFFER
-				if [ ! -z ${BUFFER} ]; then OCSP_URI=${BUFFER} ; fi
+				read -p " ==> New OCSP URL [${OCSP_URL}]: " buffer
+				[ ! -z ${buffer} ] && OCSP_URL=${buffer}
+				;;
+			s)
+				saveCfg
 				;;
 			p)
 				return
 				;;
 		esac
 	done
+}
+
+function saveCfg() {
+	local buffer=$1
+	if [ -z ${buffer} ]
+	then
+		echo
+		read -p " ==> File to save [${CFG_FILE}]: " buffer
+		[ ! -z ${buffer} ] && CFG_FILE=${buffer}
+	fi
+	touch ${CFG_FILE}
+	
+	if [ -w ${CFG_FILE} ]
+	then
+		echo "## Configuration file for manageCA.sh script" > ${CFG_FILE}
+		echo >> ${CFG_FILE}
+		echo "# Country Code for certificate" >> ${CFG_FILE}
+		echo "COUNTRYNAME=\"${COUNTRYNAME}\"" >> ${CFG_FILE}
+		echo >> ${CFG_FILE}
+		echo "# State Name for certificate" >> ${CFG_FILE}
+		echo "STATE=\"${STATE}\"" >> ${CFG_FILE}
+		echo >> ${CFG_FILE}
+		echo "# City Name for certificate" >> ${CFG_FILE}
+		echo "CITY=\"${CITY}\"" >> ${CFG_FILE}
+		echo >> ${CFG_FILE}
+		echo "# Company Name for certificate" >> ${CFG_FILE}
+		echo "COMPANY=\"${COMPANY}\"" >> ${CFG_FILE}
+		echo >> ${CFG_FILE}
+		echo "# OCSP URL for certificate" >> ${CFG_FILE}
+		echo "OCSP_URL=\"${OCSP_URL}\"" >> ${CFG_FILE}
+		echo >> ${CFG_FILE}
+		echo "# PKI Default Path" >> ${CFG_FILE}
+		echo "PKI_PATH=\"${PKI_PATH}\"" >> ${CFG_FILE}
+		echo >> ${CFG_FILE}
+	else
+		echo
+		echo "Error: ${CFG_FILE} is not writable for you"
+		read -p "Press [enter] to continue" DUMMY
+	fi
 }
 
 function addUser() {
@@ -116,14 +164,15 @@ function addUser() {
 	echo
 	
 	read -p " ==> Select Usage Key (server, client or ocsp) [client]: " buffer
-	if [ ! -z ${buffer} ]; then usage=${buffer} ; fi
+	[ -z ${buffer} ] || usage=${buffer}
 	echo
 	
 	if [[ "${usage}" == "ocsp" ]]
 	then
 			extension="-extensions OCSP"
 	else
-		read -p "Add OCSP Extension to Certificate ? [y/N]: " buffer
+		read -p "Add OCSP Extension to Certificate ? [Y/n]: " buffer
+		[ -z ${buffer} ] && buffer="y"
 		if [[ "${buffer}" == "y" ]]
 		then
 			if [[ "${usage}" == "server" ]]
@@ -220,7 +269,16 @@ function revokeUser() {
 		return
 	fi
 	openssl ca -revoke ${PKI_PATH}/${NAME}/certs/${user}.crt \
-		-config ${PKI_PATH}/${NAME}/ssl.cnf 
+		-config ${PKI_PATH}/${NAME}/ssl.cnf
+	# Save old certificate
+	x=1
+	while [ -f "${PKI_PATH}/${NAME}/certs/${user}.revoked.$x.crt" ]
+	do
+		x=$(( $x + 1 ))
+	done
+	
+	mv ${PKI_PATH}/${NAME}/certs/${user}.crt ${PKI_PATH}/${NAME}/certs/${user}.revoked.$x.crt
+	# Regen CRL
 	openssl ca -gencrl -config ${PKI_PATH}/${NAME}/ssl.cnf \
 		-out ${PKI_PATH}/${NAME}/${NAME}_ca.crl
 	echo
@@ -416,7 +474,7 @@ extendedKeyUsage        = OCSPSigning
 issuerAltName           = issuer:copy
 subjectKeyIdentifier    = hash
 authorityKeyIdentifier  = keyid:always,issuer:always
-authorityInfoAccess     = OCSP;URI:@OCSPURI@
+authorityInfoAccess     = OCSP;URI:@OCSPURL@
  
 [OCSP_SERVER]
 nsComment                       = "OpenSSL Generated Server Certificate"
@@ -427,7 +485,7 @@ basicConstraints                = critical,CA:FALSE
 keyUsage                        = digitalSignature, nonRepudiation, keyEncipherment
 nsCertType                      = server
 extendedKeyUsage                = serverAuth
-authorityInfoAccess             = OCSP;URI:@OCSPURI@
+authorityInfoAccess             = OCSP;URI:@OCSPURL@
  
 [OCSP_CLIENT]
 nsComment                       = "OpenSSL Generated Client Certificate"
@@ -438,7 +496,7 @@ basicConstraints                = critical,CA:FALSE
 keyUsage                        = digitalSignature, nonRepudiation
 nsCertType                      = client
 extendedKeyUsage                = clientAuth
-authorityInfoAccess             = OCSP;URI:@OCSPURI@
+authorityInfoAccess             = OCSP;URI:@OCSPURL@
 
 EOF
 	sed -i \
@@ -448,14 +506,15 @@ EOF
 		-e "s#@STATE@#${STATE}#g" \
 		-e "s#@CITY@#${CITY}#g" \
 		-e "s#@ORGANISATION@#${COMPANY}#g" \
-		-e "s#@OCSPURI@#${OCSP_URI}#g" \
+		-e "s#@OCSPURL@#${OCSP_URL}#g" \
 		${PKI_PATH}/${NAME}/ssl.cnf
 }
 
 #Main program
 
+
 # process command line arguments
-while getopts "?hup:n:" opt
+while getopts "?hup:n:c:" opt
 do
 	case "${opt}" in
 		u)
@@ -467,6 +526,9 @@ do
 			printHelp
 			exit 0
 			;;
+		c)
+			CFG_FILE=$OPTARG
+			;;
 		p)
 			PKI_PATH=$OPTARG
 			;;
@@ -475,6 +537,9 @@ do
 			;;
 	esac
 done
+
+# Load config
+[ -f ${CFG_FILE} ] && source ${CFG_FILE} || saveCfg ${CFG_FILE}
 
 clear
 [ -z ${NAME} ] && changeName
