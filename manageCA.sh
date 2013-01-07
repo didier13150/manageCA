@@ -255,6 +255,9 @@ function renewUser() {
         -out ${PKI_PATH}/${NAME}/certs/${user}.crt \
         -outdir ${PKI_PATH}/${NAME}/certs \
         -infiles ${PKI_PATH}/${NAME}/certs/${user}.csr
+	cat ${PKI_PATH}/${NAME}/certs/${user}.crt \
+		${PKI_PATH}/${NAME}/certs/${user}.key \
+			> ${PKI_PATH}/${NAME}/pem/${user}.pem
 	echo
 	read -p "Press [enter] to continue" DUMMY
 }
@@ -276,8 +279,14 @@ function revokeUser() {
 	do
 		x=$(( $x + 1 ))
 	done
+		mv ${PKI_PATH}/${NAME}/certs/${user}.crt ${PKI_PATH}/${NAME}/certs/${user}.revoked.$x.crt
 	
-	mv ${PKI_PATH}/${NAME}/certs/${user}.crt ${PKI_PATH}/${NAME}/certs/${user}.revoked.$x.crt
+	x=1
+	while [ -f "${PKI_PATH}/${NAME}/pem/${user}.revoked.$x.pem" ]
+	do
+		x=$(( $x + 1 ))
+	done
+	mv ${PKI_PATH}/${NAME}/pem/${user}.pem ${PKI_PATH}/${NAME}/pem/${user}.revoked.$x.pem
 	# Regen CRL
 	openssl ca -gencrl -config ${PKI_PATH}/${NAME}/ssl.cnf \
 		-out ${PKI_PATH}/${NAME}/${NAME}_ca.crl
