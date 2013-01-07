@@ -1,7 +1,7 @@
 manageCA
 ========
 
-Manage Certificate
+CLI tool to Manage Certificate Authority
 
 =====================================================================
              Home-Didier Certificate Management System
@@ -20,6 +20,6 @@ Manage Certificate
 
    Options available before init
    p) Change PKI default path [/etc/pki]
-   n) Change CA name [httpd] (Only before creation)
+   n) Change CA name [httpd]
 
  ==> Make your choice [none]:

@@ -44,7 +44,7 @@ function printMenu() {
 	echo
 	echo "   Options available before init"
 	echo "   p) Change PKI default path [${PKI_PATH}]"
-	echo "   n) Change CA name [${NAME}] (Only before creation)"
+	echo "   n) Change CA name [${NAME}]"
 	echo
 }
 
