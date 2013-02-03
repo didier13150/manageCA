@@ -1,7 +1,42 @@
 manageCA
 ========
 
+Brief
+-----
+
 CLI tool to Manage Certificate Authority
+
+Usage
+-----
+
+manageCA.sh [OPTIONS]
+
+Options:
+-u       print usage
+-h, -?   print help
+-c       config file
+-p       PKI path ( where the CA will be created )
+-n       Name of th CA
+
+Menu
+----
+
+- Create a client / server / OCSP certificate
+- Create a web certificate (PKCS#12) from an existing certificate
+- Renew a certificate
+- Revoke a certificate
+- List all certificates
+
+- Initialize the Root Certificate Authority
+- Delete entirely the Root Certificate Authority
+- Show/Modify/Save CA Options
+
+CA Options are saved on a config file:
+- Country Name
+- State Name
+- City Name
+- Company Name
+- OCSP URL
 
 =====================================================================
              Home-Didier Certificate Management System
