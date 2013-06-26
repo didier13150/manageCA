@@ -1,7 +1,7 @@
 #!/bin/bash
 ################################################################################
 # Author: Didier Fabert
-# Rev 0.4
+# Rev 0.5
 ################################################################################
 COUNTRYNAME="FR"
 STATE="Languedoc-Roussillon"
@@ -186,7 +186,7 @@ function addUser() {
 		fi
 	fi
 	
-	openssl genrsa -out ${PKI_PATH}/${NAME}/certs/${user}.key 2048 \
+	openssl genrsa -out ${PKI_PATH}/${NAME}/private/${user}.key 2048 \
 		1>/dev/null 2>&1
 	if [[ "${usage}" == "server" ]]
 	then
@@ -201,14 +201,14 @@ function addUser() {
 		> ${PKI_PATH}/${NAME}/ssl2.cnf
 	openssl req -config ${PKI_PATH}/${NAME}/ssl2.cnf -new -nodes -batch \
 		-out ${PKI_PATH}/${NAME}/certs/${user}.csr \
-		-key ${PKI_PATH}/${NAME}/certs/${user}.key
+		-key ${PKI_PATH}/${NAME}/private/${user}.key
 	openssl ca -config ${PKI_PATH}/${NAME}/ssl2.cnf \
-		-cert ${PKI_PATH}/${NAME}/${NAME}_ca.crt ${extension} \
+		-cert ${PKI_PATH}/${NAME}/${NAME}ca.crt ${extension} \
 		-out ${PKI_PATH}/${NAME}/certs/${user}.crt \
 		-outdir ${PKI_PATH}/${NAME}/certs \
 		-infiles ${PKI_PATH}/${NAME}/certs/${user}.csr
 	cat ${PKI_PATH}/${NAME}/certs/${user}.crt \
-		${PKI_PATH}/${NAME}/certs/${user}.key \
+		${PKI_PATH}/${NAME}/private/${user}.key \
 			> ${PKI_PATH}/${NAME}/pem/${user}.pem
 	mv ${PKI_PATH}/${NAME}/ssl2.cnf ${PKI_PATH}/${NAME}/confs/${user}-ssl.cnf
 	read -p "Press [enter] to continue" DUMMY
@@ -226,9 +226,9 @@ function webUser() {
 	echo
 	if [ -f ${PKI_PATH}/${NAME}/certs/${user}.crt ]
 	then
-		openssl pkcs12 -export -inkey ${PKI_PATH}/${NAME}/certs/${user}.key \
+		openssl pkcs12 -export -inkey ${PKI_PATH}/${NAME}/private/${user}.key \
 			-in ${PKI_PATH}/${NAME}/certs/${user}.crt \
-			-CAfile ${PKI_PATH}/${NAME}/${NAME}_ca.crt \
+			-CAfile ${PKI_PATH}/${NAME}/${NAME}ca.crt \
 			-out ${PKI_PATH}/${NAME}/certs/${user}_browser_cert.p12
 	fi
 	echo
@@ -256,7 +256,7 @@ function renewUser() {
         -outdir ${PKI_PATH}/${NAME}/certs \
         -infiles ${PKI_PATH}/${NAME}/certs/${user}.csr
 	cat ${PKI_PATH}/${NAME}/certs/${user}.crt \
-		${PKI_PATH}/${NAME}/certs/${user}.key \
+		${PKI_PATH}/${NAME}/private/${user}.key \
 			> ${PKI_PATH}/${NAME}/pem/${user}.pem
 	echo
 	read -p "Press [enter] to continue" DUMMY
@@ -279,17 +279,17 @@ function revokeUser() {
 	do
 		x=$(( $x + 1 ))
 	done
-		mv ${PKI_PATH}/${NAME}/certs/${user}.crt ${PKI_PATH}/${NAME}/certs/${user}.revoked.$x.crt
+		cp ${PKI_PATH}/${NAME}/certs/${user}.crt ${PKI_PATH}/${NAME}/certs/${user}.revoked.$x.crt
 	
 	x=1
 	while [ -f "${PKI_PATH}/${NAME}/pem/${user}.revoked.$x.pem" ]
 	do
 		x=$(( $x + 1 ))
 	done
-	mv ${PKI_PATH}/${NAME}/pem/${user}.pem ${PKI_PATH}/${NAME}/pem/${user}.revoked.$x.pem
+	cp ${PKI_PATH}/${NAME}/pem/${user}.pem ${PKI_PATH}/${NAME}/pem/${user}.revoked.$x.pem
 	# Regen CRL
 	openssl ca -gencrl -config ${PKI_PATH}/${NAME}/ssl.cnf \
-		-out ${PKI_PATH}/${NAME}/crl/${NAME}_ca.crl
+		-out ${PKI_PATH}/${NAME}/crl/${NAME}ca.crl
 	echo
 	echo "Don't forget to reload Apache"
 	echo
@@ -356,8 +356,8 @@ function initCA() {
 	touch ${PKI_PATH}/${NAME}/index.txt
 	[ -f ${PKI_PATH}/${NAME}/serial ] || echo 01 > ${PKI_PATH}/${NAME}/serial
 	[ -f ${PKI_PATH}/${NAME}/crlnumber ] || echo 01 > ${PKI_PATH}/${NAME}/crlnumber
-	[ -f ${PKI_PATH}/${NAME}/private/${NAME}_ca.key ] || \
-		openssl genrsa -out ${PKI_PATH}/${NAME}/private/${NAME}_ca.key 2048 \
+	[ -f ${PKI_PATH}/${NAME}/private/${NAME}ca.key ] || \
+		openssl genrsa -out ${PKI_PATH}/${NAME}/private/${NAME}ca.key 2048 \
 		1>/dev/null 2>&1
 	local userdata="organizationalUnitName_default  = Admin\n"
 	userdata="${userdata}commonName_default              = ${hostname}\n"
@@ -366,13 +366,13 @@ function initCA() {
 		sed -e "s/@USERDATA@/${userdata}/" \
 		> ${PKI_PATH}/${NAME}/ssl2.cnf
 	openssl req -config ${PKI_PATH}/${NAME}/ssl2.cnf -new -x509 -days 3650 -batch \
-		-key ${PKI_PATH}/${NAME}/private/${NAME}_ca.key \
-		-out ${PKI_PATH}/${NAME}/${NAME}_ca.crt -extensions v3_ca
+		-key ${PKI_PATH}/${NAME}/private/${NAME}ca.key \
+		-out ${PKI_PATH}/${NAME}/${NAME}ca.crt -extensions v3_ca
 	mv ${PKI_PATH}/${NAME}/ssl2.cnf ${PKI_PATH}/${NAME}/confs/ca.cnf
-	[ -f ${PKI_PATH}/${NAME}/crl/${NAME}_ca.crl ] || openssl ca -gencrl \
-		-config ${PKI_PATH}/${NAME}/ssl.cnf -out ${PKI_PATH}/${NAME}/crl/${NAME}_ca.crl
-	local hash=`openssl crl -hash -noout -in ${PKI_PATH}/${NAME}/crl/${NAME}_ca.crl`
-	ln -s ${PKI_PATH}/${NAME}/crl/${NAME}_ca.crl ${PKI_PATH}/${NAME}/crl/$hash.r0
+	[ -f ${PKI_PATH}/${NAME}/crl/${NAME}ca.crl ] || openssl ca -gencrl \
+		-config ${PKI_PATH}/${NAME}/ssl.cnf -out ${PKI_PATH}/${NAME}/crl/${NAME}ca.crl
+	local hash=`openssl crl -hash -noout -in ${PKI_PATH}/${NAME}/crl/${NAME}ca.crl`
+	ln -s ${PKI_PATH}/${NAME}/crl/${NAME}ca.crl ${PKI_PATH}/${NAME}/crl/$hash.r0
 	echo
 	echo "CA initialized"
 	echo
@@ -406,10 +406,10 @@ certs                   = $dir/certs
 crl_dir                 = $dir/crl
 database                = $dir/index.txt
 new_certs_dir           = $dir/newcerts
-certificate             = $dir/@NAME@_ca.crt
-private_key             = $dir/private/@NAME@_ca.key
+certificate             = $dir/@NAME@ca.crt
+private_key             = $dir/private/@NAME@ca.key
 serial                  = $dir/serial
-crl                     = $dir/crl/@NAME@_ca.crl
+crl                     = $dir/crl/@NAME@ca.crl
 crlnumber               = $dir/crlnumber
 crl_extensions          = crl_ext
 x509_extensions         = usr_cert
@@ -547,7 +547,7 @@ do
 done
 
 # Load config
-[ -f ${CFG_FILE} ] && source ${CFG_FILE} || saveCfg ${CFG_FILE}
+[ -f ${CFG_FILE} ] && source ${CFG_FILE} || manageOptions
 
 clear
 [ -z ${NAME} ] && changeName
