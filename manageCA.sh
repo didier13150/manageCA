@@ -143,7 +143,26 @@ function saveCfg() {
 	fi
 }
 
+function testCA() {
+	if [ ! -f ${PKI_PATH}/${NAME}/ssl.cnf ]
+	then
+		echo
+		echo
+		echo -e "\033[31m !!! CA not found, initialize CA first !!! \033[0m"
+		echo
+		read -p "Press any key to switch back to the previous menu: "
+		return 1
+	fi
+	return 0
+}
+
 function addUser() {
+	testCA
+	local retval=$?
+	if [ ${retval} -eq 1 ]
+	then
+		return
+	fi
 	local user
 	local email
 	local usage="client"
@@ -215,6 +234,12 @@ function addUser() {
 }
 
 function webUser() {
+	testCA
+	local retval=$?
+	if [ ${retval} -eq 1 ]
+	then
+		return
+	fi
 	local user
 	printSubMenu "Create a Client Certificate for Web"
 	printUserList
@@ -240,6 +265,12 @@ function webUser() {
 }
 
 function renewUser() {
+	testCA
+	local retval=$?
+	if [ ${retval} -eq 1 ]
+	then
+		return
+	fi
 	local user
 	printSubMenu "Renew a Server Certificate"
 	printUserList
@@ -263,6 +294,12 @@ function renewUser() {
 }
 
 function revokeUser() {
+	testCA
+	local retval=$?
+	if [ ${retval} -eq 1 ]
+	then
+		return
+	fi
 	local user=$1
 	printSubMenu "Revoke a Client Certificate"
 	printUserList
@@ -297,6 +334,12 @@ function revokeUser() {
 }
 
 function listUser() {
+	testCA
+	local retval=$?
+	if [ ${retval} -eq 1 ]
+	then
+		return
+	fi
 	printSubMenu "List Client Certificates"
 	while [ 1 ]
 	do
@@ -310,6 +353,12 @@ function listUser() {
 }
 
 function printUserList() {
+	testCA
+	local retval=$?
+	if [ ${retval} -eq 1 ]
+	then
+		return
+	fi
 	while [ 1 ]
 	do
 	   read LINE || break
@@ -332,7 +381,7 @@ function initCA() {
 	printSubMenu "CA Initialisation"
 	if [ -f ${PKI_PATH}/${NAME}/ssl.cnf ]
 	then
-		read -p "!!! Already initalized !!!"
+		read -p "!!! Already initalized, delete CA first !!!"
 		return
 	fi
 	read -p " ==> Fully qualified Hostname [NONE]: " hostname
