@@ -38,6 +38,7 @@ function printMenu() {
 	echo "   5) List Certificates"
 	echo
 	echo "   i) Initialize Root Certificate Authority (CA)"
+	echo "   r) Regenerate CRL"
 	echo "   d) Delete CA"
 	echo "   o) Show/Modify/Save CA Options"
 	echo "   q) Quit"
@@ -60,7 +61,7 @@ function manageOptions() {
 	local buffer
 	while true;
 	do
-		printSubMenu "CA Options"
+		printSubMenu "CA Global Options"
 		echo "   1) Country Name [${COUNTRYNAME}]"
 		echo "   2) State Name [${STATE}]"
 		echo "   3) City Name [${CITY}]"
@@ -324,13 +325,31 @@ function revokeUser() {
 		x=$(( $x + 1 ))
 	done
 	cp ${PKI_PATH}/${NAME}/pem/${user}.pem ${PKI_PATH}/${NAME}/pem/${user}.revoked.$x.pem
-	# Regen CRL
+	echo
+	regenCRL
+	read -p "Press [enter] to continue" DUMMY
+}
+
+function regenCRL() {
+	testCA
+	local retval=$?
+	if [ ${retval} -eq 1 ]
+	then
+		return
+	fi
+	printSubMenu "Regen CRL"
 	openssl ca -gencrl -config ${PKI_PATH}/${NAME}/ssl.cnf \
 		-out ${PKI_PATH}/${NAME}/crl/${NAME}ca.crl
+	retval=$?
 	echo
-	echo "Don't forget to reload Apache"
-	echo
-	[ -z ${1} ] read -p "Press [enter] to continue" DUMMY
+	if [ ${retval} -eq 0 ]
+	then
+		echo "CRL regenerated."
+	else
+		echo "Error encoured during CRL regeneration process !!!"
+	fi
+	
+	read -p "Press [enter] to continue" DUMMY
 }
 
 function listUser() {
@@ -378,10 +397,11 @@ function changeName() {
 }
 
 function initCA() {
-	printSubMenu "CA Initialisation"
+	printSubMenu "${NAME} CA Initialisation"
 	if [ -f ${PKI_PATH}/${NAME}/ssl.cnf ]
 	then
 		read -p "!!! Already initalized, delete CA first !!!"
+		read -p "Press [enter] to continue" DUMMY
 		return
 	fi
 	read -p " ==> Fully qualified Hostname [NONE]: " hostname
@@ -418,7 +438,7 @@ function initCA() {
 		-key ${PKI_PATH}/${NAME}/private/${NAME}ca.key \
 		-out ${PKI_PATH}/${NAME}/${NAME}ca.crt -extensions v3_ca
 	mv ${PKI_PATH}/${NAME}/ssl2.cnf ${PKI_PATH}/${NAME}/confs/ca.cnf
-	[ -f ${PKI_PATH}/${NAME}/crl/${NAME}ca.crl ] || openssl ca -gencrl \
+	[ -f ${PKI_PATH}/${NAME}/crl/${NAME}ca.crl ] || regenCRL \
 		-config ${PKI_PATH}/${NAME}/ssl.cnf -out ${PKI_PATH}/${NAME}/crl/${NAME}ca.crl
 	local hash=`openssl crl -hash -noout -in ${PKI_PATH}/${NAME}/crl/${NAME}ca.crl`
 	ln -s ${PKI_PATH}/${NAME}/crl/${NAME}ca.crl ${PKI_PATH}/${NAME}/crl/$hash.r0
@@ -638,6 +658,9 @@ do
 			;;
 		D|d)
 			deleteCA
+			;;
+		R|r)
+			regenCRL
 			;;
 		O|o)
 			manageOptions
