@@ -12,17 +12,19 @@ OCSP_URL="http://didier.domicile.org/"
 PKI_PATH="/etc/pki"
 NAME=""
 CFG_FILE="/etc/manageCA.conf"
+REGEN_ONLY=0
 
 function printUsage() {
-	echo "$(basename $0)"
+	echo "Usage: $(basename $0)"
 }
 
 function printHelp() {
 	echo
 	echo "Options:"
-	echo -e "\t-c <NAME>     Config File [${CFG_FILE}]"
-	echo -e "\t-p <PATH>     Path for PKI [/etc/pki]"
-	echo -e "\t-n <NAME>     CA Name [None]"
+	echo -e "  -c <NAME>     Config File [${CFG_FILE}]"
+	echo -e "  -p <PATH>     Path for PKI [/etc/pki]"
+	echo -e "  -n <NAME>     CA Name [None]"
+	echo -e "  -r            Regenerate CRL only. -n option is mandatory."
 }
 
 function printMenu() {
@@ -337,7 +339,6 @@ function regenCRL() {
 	then
 		return
 	fi
-	printSubMenu "Regen CRL"
 	openssl ca -gencrl -config ${PKI_PATH}/${NAME}/ssl.cnf \
 		-out ${PKI_PATH}/${NAME}/crl/${NAME}ca.crl
 	retval=$?
@@ -348,7 +349,12 @@ function regenCRL() {
 	else
 		echo "Error encoured during CRL regeneration process !!!"
 	fi
-	
+}
+
+function regenerateCRL() {
+	printSubMenu "Regen CRL"
+	regenCRL
+	echo
 	read -p "Press [enter] to continue" DUMMY
 }
 
@@ -591,7 +597,7 @@ EOF
 
 
 # process command line arguments
-while getopts "?hup:n:c:" opt
+while getopts "?hurp:n:c:" opt
 do
 	case "${opt}" in
 		u)
@@ -612,8 +618,23 @@ do
 		n)
 			NAME=$OPTARG
 			;;
+		r)
+			REGEN_ONLY=1
+			;;
 	esac
 done
+
+if [ ${REGEN_ONLY} -ne 0 ]
+then
+	if [ -z ${NAME} ]
+	then
+		echo "Error: No name provided."
+		echo "You must specify name with the '-n' option"
+		exit 1
+	fi
+	regenCRL
+	exit 0
+fi
 
 # Load config
 [ -f ${CFG_FILE} ] && source ${CFG_FILE} || manageOptions
@@ -660,7 +681,7 @@ do
 			deleteCA
 			;;
 		R|r)
-			regenCRL
+			regenerateCRL
 			;;
 		O|o)
 			manageOptions

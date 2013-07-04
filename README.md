@@ -17,6 +17,7 @@ Options:
 -c       config file
 -p       PKI path ( where the CA will be created )
 -n       Name of th CA
+-r       Regenerate CRL only. -n option is mandatory.
 
 Menu
 ----
@@ -28,6 +29,7 @@ Menu
 - List all certificates
 
 - Initialize the Root Certificate Authority
+- Regenerate CRL
 - Delete entirely the Root Certificate Authority
 - Show/Modify/Save CA Options
 
@@ -43,29 +45,31 @@ CA Options are saved on a config file:
 =====================================================================
 
    1) Create a Client/Server/OCSP certificate
-   
+
    2) Create a Client Certificate for Web (PKCS#12)
-   
+
    3) Renew a Certificate
-   
+
    4) Revoke a Certificate
-   
+
    5) List Certificates
 
-   
+
    i) Initialize Root Certificate Authority (CA)
-   
+
+   r) Regenerate CRL
+
    d) Delete CA
-   
+
    o) Show/Modify/Save CA Options
-   
+
    q) Quit
 
-   
+
    Options available before init
-   
+
    p) Change PKI default path [/etc/pki]
-   
+
    n) Change CA name [httpd]
 
 
