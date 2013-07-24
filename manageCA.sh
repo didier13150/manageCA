@@ -188,13 +188,19 @@ function addUser() {
 	read -p " ==> Select Usage Key (server, client or ocsp) [client]: " buffer
 	[ -z ${buffer} ] || usage=${buffer}
 	echo
-	
+	if [[ "${usage}" == "client" ]]
+	then
+		read -p " ==> Custom Organization Unit Name [User]: " oun
+		[ -z "${oun}" ] && oun="User"
+		echo
+	fi
+	echo "OU=${oun}"
 	if [[ "${usage}" == "ocsp" ]]
 	then
 			extension="-extensions OCSP"
 	else
 		read -p "Add OCSP Extension to Certificate ? [Y/n]: " buffer
-		[ -z ${buffer} ] && buffer="y"
+		[ -z "${buffer}" ] && buffer="y"
 		if [[ "${buffer}" == "y" ]]
 		then
 			if [[ "${usage}" == "server" ]]
@@ -208,31 +214,32 @@ function addUser() {
 		fi
 	fi
 	
-	openssl genrsa -out ${PKI_PATH}/${NAME}/private/${user}.key 2048 \
+	openssl genrsa -out ${PKI_PATH}/${NAME}/private/${user}-${email}.key 2048 \
 		1>/dev/null 2>&1
-	if [[ "${usage}" == "server" ]]
+	if [[ "${usage}" != "server" ]]
 	then
-		userdata="organizationalUnitName_default  = User\n"
+		userdata="organizationalUnitName_default  = ${oun}\n"
 	else
 		userdata="organizationalUnitName_default  = Admin\n"
 	fi
 	userdata="${userdata}commonName_default              = ${user}\n"
 	userdata="${userdata}emailAddress_default            = ${email}"
+	echo "userdata=\"${userdata}\""
 	cat ${PKI_PATH}/${NAME}/ssl.cnf | tr -d '#' | \
 		sed -e "s/@USERDATA@/${userdata}/" \
 		> ${PKI_PATH}/${NAME}/ssl2.cnf
 	openssl req -config ${PKI_PATH}/${NAME}/ssl2.cnf -new -nodes -batch \
-		-out ${PKI_PATH}/${NAME}/certs/${user}.csr \
-		-key ${PKI_PATH}/${NAME}/private/${user}.key
+		-out ${PKI_PATH}/${NAME}/certs/${user}-${email}.csr \
+		-key ${PKI_PATH}/${NAME}/private/${user}-${email}.key
 	openssl ca -config ${PKI_PATH}/${NAME}/ssl2.cnf \
 		-cert ${PKI_PATH}/${NAME}/${NAME}ca.crt ${extension} \
-		-out ${PKI_PATH}/${NAME}/certs/${user}.crt \
+		-out ${PKI_PATH}/${NAME}/certs/${user}-${email}.crt \
 		-outdir ${PKI_PATH}/${NAME}/certs \
-		-infiles ${PKI_PATH}/${NAME}/certs/${user}.csr
-	cat ${PKI_PATH}/${NAME}/certs/${user}.crt \
-		${PKI_PATH}/${NAME}/private/${user}.key \
-			> ${PKI_PATH}/${NAME}/pem/${user}.pem
-	mv ${PKI_PATH}/${NAME}/ssl2.cnf ${PKI_PATH}/${NAME}/confs/${user}-ssl.cnf
+		-infiles ${PKI_PATH}/${NAME}/certs/${user}-${email}.csr
+	cat ${PKI_PATH}/${NAME}/certs/${user}-${email}.crt \
+		${PKI_PATH}/${NAME}/private/${user}-${email}.key \
+			> ${PKI_PATH}/${NAME}/pem/${user}-${email}.pem
+	mv ${PKI_PATH}/${NAME}/ssl2.cnf ${PKI_PATH}/${NAME}/confs/${user}-${email}-ssl.cnf
 	read -p "Press [enter] to continue" DUMMY
 }
 
@@ -246,22 +253,29 @@ function webUser() {
 	local user
 	printSubMenu "Create a Client Certificate for Web"
 	printUserList
+	echo
 	read -p " ==> User name [NONE]: " user
 	if [[ "${user}" == "" ]]
 	then
 		return
 	fi
 	echo
-	if [ -f ${PKI_PATH}/${NAME}/certs/${user}.crt ]
+	read -p " ==> User email [NONE]: " email
+	if [[ "${email}" == "" ]]
 	then
-		openssl pkcs12 -export -inkey ${PKI_PATH}/${NAME}/private/${user}.key \
-			-in ${PKI_PATH}/${NAME}/certs/${user}.crt \
-			-CAfile ${PKI_PATH}/${NAME}/${NAME}ca.crt \
-			-out ${PKI_PATH}/${NAME}/certs/${user}_browser_cert.p12
+		return
 	fi
 	echo
-	[ -f ${PKI_PATH}/${NAME}/certs/${user}_browser_cert.p12 ] \
-		&& echo "Web certificate: ${PKI_PATH}/${NAME}/certs/${user}_browser_cert.p12" \
+	if [ -f ${PKI_PATH}/${NAME}/certs/${user}-${email}.crt ]
+	then
+		openssl pkcs12 -export -inkey ${PKI_PATH}/${NAME}/private/${user}-${email}.key \
+			-in ${PKI_PATH}/${NAME}/certs/${user}-${email}.crt \
+			-CAfile ${PKI_PATH}/${NAME}/${NAME}ca.crt \
+			-out ${PKI_PATH}/${NAME}/certs/${user}-${email}_browser_cert.p12
+	fi
+	echo
+	[ -f ${PKI_PATH}/${NAME}/certs/${user}-${email}_browser_cert.p12 ] \
+		&& echo "Web certificate: ${PKI_PATH}/${NAME}/certs/${user}-${email}_browser_cert.p12" \
 		|| echo "Error encoured"
 	echo
 	read -p "Press [enter] to continue" DUMMY
@@ -277,6 +291,7 @@ function renewUser() {
 	local user
 	printSubMenu "Renew a Server Certificate"
 	printUserList
+	echo
 	read -p " ==> User name [NONE]: " user
 	if [[ "${user}" == "" ]]
 	then
@@ -284,14 +299,21 @@ function renewUser() {
 		read -p "Press [enter] to continue" DUMMY
 		return
 	fi
-	revokeUser ${user}
-	openssl ca -config ${PKI_PATH}/${NAME}/confs/${user}-ssl.cnf \
-        -out ${PKI_PATH}/${NAME}/certs/${user}.crt \
+	echo
+	read -p " ==> User email [NONE]: " email
+	if [[ "${email}" == "" ]]
+	then
+		return
+	fi
+	echo
+	revokeUser ${user} ${email}
+	openssl ca -config ${PKI_PATH}/${NAME}/confs/${user}-${email}-ssl.cnf \
+        -out ${PKI_PATH}/${NAME}/certs/${user}-${email}.crt \
         -outdir ${PKI_PATH}/${NAME}/certs \
-        -infiles ${PKI_PATH}/${NAME}/certs/${user}.csr
-	cat ${PKI_PATH}/${NAME}/certs/${user}.crt \
-		${PKI_PATH}/${NAME}/private/${user}.key \
-			> ${PKI_PATH}/${NAME}/pem/${user}.pem
+        -infiles ${PKI_PATH}/${NAME}/certs/${user}-${email}.csr
+	cat ${PKI_PATH}/${NAME}/certs/${user}-${email}.crt \
+		${PKI_PATH}/${NAME}/private/${user}-${email}.key \
+			> ${PKI_PATH}/${NAME}/pem/${user}-${email}.pem
 	echo
 	read -p "Press [enter] to continue" DUMMY
 }
@@ -304,29 +326,38 @@ function revokeUser() {
 		return
 	fi
 	local user=$1
+	local email=$2
 	printSubMenu "Revoke a Client Certificate"
 	printUserList
+	echo
 	[ -z ${user} ] && read -p " ==> User name [NONE]: " user
 	if [[ "${user}" == "" ]]
 	then
 		return
 	fi
-	openssl ca -revoke ${PKI_PATH}/${NAME}/certs/${user}.crt \
+	echo
+	[ -z ${email} ] && read -p " ==> User email [NONE]: " email
+	if [[ "${email}" == "" ]]
+	then
+		return
+	fi
+	echo
+	openssl ca -revoke ${PKI_PATH}/${NAME}/certs/${user}-${email}.crt \
 		-config ${PKI_PATH}/${NAME}/ssl.cnf
 	# Save old certificate
 	x=1
-	while [ -f "${PKI_PATH}/${NAME}/certs/${user}.revoked.$x.crt" ]
+	while [ -f "${PKI_PATH}/${NAME}/certs/${user}-${email}.revoked.$x.crt" ]
 	do
 		x=$(( $x + 1 ))
 	done
-		cp ${PKI_PATH}/${NAME}/certs/${user}.crt ${PKI_PATH}/${NAME}/certs/${user}.revoked.$x.crt
+		cp ${PKI_PATH}/${NAME}/certs/${user}-${email}.crt ${PKI_PATH}/${NAME}/certs/${user}-${email}.revoked.$x.crt
 	
 	x=1
-	while [ -f "${PKI_PATH}/${NAME}/pem/${user}.revoked.$x.pem" ]
+	while [ -f "${PKI_PATH}/${NAME}/pem/${user}-${email}.revoked.$x.pem" ]
 	do
 		x=$(( $x + 1 ))
 	done
-	cp ${PKI_PATH}/${NAME}/pem/${user}.pem ${PKI_PATH}/${NAME}/pem/${user}.revoked.$x.pem
+	cp ${PKI_PATH}/${NAME}/pem/${user}-${email}.pem ${PKI_PATH}/${NAME}/pem/${user}-${email}.revoked.$x.pem
 	echo
 	regenCRL
 	read -p "Press [enter] to continue" DUMMY
@@ -370,8 +401,9 @@ function listUser() {
 	do
 	   read LINE || break
 	   LISTNUM=`echo ${LINE} | grep -v "^R" | awk '{ print $3 }'`
-	   LISTCN=`echo ${LINE} | grep -v "^R" | awk -F CN= '{ print $2 }' | cut -d '/' -f1`
-	   [ -z ${LISTNUM} ] || echo " ${LISTNUM} ${LISTCN}"
+	   LISTCN=`echo ${LINE} | grep -v "^R" | awk -F 'CN=' '{ print $2 }' | cut -d '/' -f1`
+	   LISTEMAIL=`echo ${LINE} | grep -v "^R" | awk -F 'emailAddress=' '{ print $2 }' | cut -d '/' -f1`
+	   [ -z ${LISTNUM} ] || echo " ${LISTNUM} ${LISTCN} (${LISTEMAIL})"
 	done < ${PKI_PATH}/${NAME}/index.txt
 	echo
 	read -p "Press [enter] to continue" DUMMY
@@ -387,8 +419,10 @@ function printUserList() {
 	while [ 1 ]
 	do
 	   read LINE || break
+	   LISTNUM=`echo ${LINE} | grep -v "^R" | awk '{ print $3 }'`
 	   LISTCN=`echo ${LINE} | grep -v "^R" | awk -F CN= '{ print $2 }' | cut -d '/' -f1`
-	   [ -z ${LISTCN} ] || echo "- ${LISTCN}"
+	   LISTEMAIL=`echo ${LINE} | grep -v "^R" | awk -F 'emailAddress=' '{ print $2 }' | cut -d '/' -f1`
+	   [ -z ${LISTCN} ] || echo "- ${LISTNUM} ${LISTCN} (${LISTEMAIL})"
 	done < ${PKI_PATH}/${NAME}/index.txt
 }
 
