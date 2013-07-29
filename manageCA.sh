@@ -6,7 +6,7 @@
 COUNTRYNAME="FR"
 STATE="Languedoc-Roussillon"
 CITY="Beaucaire"
-COMPANY="Home"
+COMPANY="Didier Home"
 OCSP_URL="http://didier.domicile.org/"
 
 PKI_PATH="/etc/pki"
@@ -79,23 +79,24 @@ function manageOptions() {
 		case ${CHOICE} in
 			1)
 				read -p " ==> New Country Name [${COUNTRYNAME}]: " buffer
-				[ ! -z ${buffer} ] && COUNTRYNAME=${buffer}
+				[ ! -z "${buffer}" ] && COUNTRYNAME=${buffer}
 				;;
 			2)
 				read -p " ==> New State Name [${STATE}]: " buffer
-				[ ! -z ${buffer} ] && STATE=${buffer}
+				[ ! -z "${buffer}" ] && STATE=${buffer}
 				;;
 			3)
 				read -p " ==> New City Name [${CITY}]: " buffer
-				[ ! -z ${buffer} ] && CITY=${buffer}
+				[ ! -z "${buffer}" ] && CITY=${buffer}
 				;;
 			4)
 				read -p " ==> New Company Name [${COMPANY}]: " buffer
-				[ ! -z ${buffer} ] && COMPANY=${buffer}
+				echo "buffer=\"${buffer}\""
+				[ ! -z "${buffer}" ] && COMPANY=${buffer}
 				;;
 			5)
 				read -p " ==> New OCSP URL [${OCSP_URL}]: " buffer
-				[ ! -z ${buffer} ] && OCSP_URL=${buffer}
+				[ ! -z "${buffer}" ] && OCSP_URL=${buffer}
 				;;
 			s)
 				saveCfg
@@ -109,11 +110,11 @@ function manageOptions() {
 
 function saveCfg() {
 	local buffer=$1
-	if [ -z ${buffer} ]
+	if [ -z "${buffer}" ]
 	then
 		echo
 		read -p " ==> File to save [${CFG_FILE}]: " buffer
-		[ ! -z ${buffer} ] && CFG_FILE=${buffer}
+		[ ! -z "${buffer}" ] && CFG_FILE=${buffer}
 	fi
 	touch ${CFG_FILE}
 	
@@ -186,7 +187,7 @@ function addUser() {
 	echo
 	
 	read -p " ==> Select Usage Key (server, client or ocsp) [client]: " buffer
-	[ -z ${buffer} ] || usage=${buffer}
+	[ -z "${buffer}" ] || usage=${buffer}
 	echo
 	if [[ "${usage}" == "client" ]]
 	then
@@ -194,7 +195,6 @@ function addUser() {
 		[ -z "${oun}" ] && oun="User"
 		echo
 	fi
-	echo "OU=${oun}"
 	if [[ "${usage}" == "ocsp" ]]
 	then
 			extension="-extensions OCSP"
@@ -224,7 +224,6 @@ function addUser() {
 	fi
 	userdata="${userdata}commonName_default              = ${user}\n"
 	userdata="${userdata}emailAddress_default            = ${email}"
-	echo "userdata=\"${userdata}\""
 	cat ${PKI_PATH}/${NAME}/ssl.cnf | tr -d '#' | \
 		sed -e "s/@USERDATA@/${userdata}/" \
 		> ${PKI_PATH}/${NAME}/ssl2.cnf
@@ -330,13 +329,13 @@ function revokeUser() {
 	printSubMenu "Revoke a Client Certificate"
 	printUserList
 	echo
-	[ -z ${user} ] && read -p " ==> User name [NONE]: " user
+	[ -z "${user}" ] && read -p " ==> User name [NONE]: " user
 	if [[ "${user}" == "" ]]
 	then
 		return
 	fi
 	echo
-	[ -z ${email} ] && read -p " ==> User email [NONE]: " email
+	[ -z "${email}" ] && read -p " ==> User email [NONE]: " email
 	if [[ "${email}" == "" ]]
 	then
 		return
@@ -403,7 +402,7 @@ function listUser() {
 	   LISTNUM=`echo ${LINE} | grep -v "^R" | awk '{ print $3 }'`
 	   LISTCN=`echo ${LINE} | grep -v "^R" | awk -F 'CN=' '{ print $2 }' | cut -d '/' -f1`
 	   LISTEMAIL=`echo ${LINE} | grep -v "^R" | awk -F 'emailAddress=' '{ print $2 }' | cut -d '/' -f1`
-	   [ -z ${LISTNUM} ] || echo " ${LISTNUM} ${LISTCN} (${LISTEMAIL})"
+	   [ -z "${LISTNUM}" ] || echo " ${LISTNUM} ${LISTCN} (${LISTEMAIL})"
 	done < ${PKI_PATH}/${NAME}/index.txt
 	echo
 	read -p "Press [enter] to continue" DUMMY
@@ -422,14 +421,14 @@ function printUserList() {
 	   LISTNUM=`echo ${LINE} | grep -v "^R" | awk '{ print $3 }'`
 	   LISTCN=`echo ${LINE} | grep -v "^R" | awk -F CN= '{ print $2 }' | cut -d '/' -f1`
 	   LISTEMAIL=`echo ${LINE} | grep -v "^R" | awk -F 'emailAddress=' '{ print $2 }' | cut -d '/' -f1`
-	   [ -z ${LISTCN} ] || echo "- ${LISTNUM} ${LISTCN} (${LISTEMAIL})"
+	   [ -z "${LISTCN}" ] || echo "- ${LISTNUM} ${LISTCN} (${LISTEMAIL})"
 	done < ${PKI_PATH}/${NAME}/index.txt
 }
 
 function changeDefaultPath() {
 	local buffer
 	read -p " ==> Select New path for CA [${PKI_PATH}]: " buffer
-	if [ ! -z ${buffer} ]; then PKI_PATH=${buffer} ; fi
+	if [ ! -z "${buffer}" ]; then PKI_PATH=${buffer} ; fi
 }
 
 function changeName() {
@@ -459,6 +458,7 @@ function initCA() {
 		read -p "Press [enter] to continue" DUMMY
 		return
 	fi
+	echo
 	
 	mkdir -p ${PKI_PATH}/${NAME}/{certs,newcerts,private,confs,crl,pem}
 	initConfig
@@ -484,6 +484,8 @@ function initCA() {
 	ln -s ${PKI_PATH}/${NAME}/crl/${NAME}ca.crl ${PKI_PATH}/${NAME}/crl/$hash.r0
 	echo
 	echo "CA initialized"
+	echo
+	openssl x509 -in ${PKI_PATH}/${NAME}/${NAME}ca.crt -noout -text
 	echo
 	read -p "Press [enter] to continue" DUMMY
 }
@@ -660,7 +662,7 @@ done
 
 if [ ${REGEN_ONLY} -ne 0 ]
 then
-	if [ -z ${NAME} ]
+	if [ -z "${NAME}" ]
 	then
 		echo "Error: No name provided."
 		echo "You must specify name with the '-n' option"
@@ -674,7 +676,7 @@ fi
 [ -f ${CFG_FILE} ] && source ${CFG_FILE} || manageOptions
 
 clear
-[ -z ${NAME} ] && changeName
+[ -z "${NAME}" ] && changeName
 while true;
 do
 	printMenu
