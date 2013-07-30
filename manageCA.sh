@@ -197,7 +197,8 @@ function addUser() {
 	fi
 	if [[ "${usage}" == "ocsp" ]]
 	then
-			extension="-extensions OCSP"
+		extension="-extensions OCSP"
+		altname=""
 	else
 		read -p "Add OCSP Extension to Certificate ? [Y/n]: " buffer
 		[ -z "${buffer}" ] && buffer="y"
@@ -206,11 +207,14 @@ function addUser() {
 			if [[ "${usage}" == "server" ]]
 			then
 				extension="-extensions OCSP_SERVER"
+				altname=$(getAlternativeName)
 			else
 				extension="-extensions OCSP_CLIENT"
+				altname=""
 			fi
 		else
 			extension=""
+			altname=""
 		fi
 	fi
 	
@@ -226,6 +230,7 @@ function addUser() {
 	userdata="${userdata}emailAddress_default            = ${email}"
 	cat ${PKI_PATH}/${NAME}/ssl.cnf | tr -d '#' | \
 		sed -e "s/@USERDATA@/${userdata}/" \
+		-e "s/@ALTNAME@/${altname}/" \
 		> ${PKI_PATH}/${NAME}/ssl2.cnf
 	openssl req -config ${PKI_PATH}/${NAME}/ssl2.cnf -new -nodes -batch \
 		-out ${PKI_PATH}/${NAME}/certs/${user}-${email}.csr \
@@ -435,7 +440,57 @@ function changeName() {
 	read -p " ==> Select New CA name [NONE]: " NAME
 }
 
+function getAlternativeName() {
+	local buffer
+	local altname
+	
+	read -p " ==> Add Alternative Name [N/y]: " buffer
+	[ -z "${buffer}" ] && buffer="n"
+	if [[ "${buffer}" == "y" ]]
+	then
+		if [ -z "${altname}" ]
+		then
+			altname="subjectAltName                  = @alt_names"
+			altname="${altname}\n\n[alt_names]"
+		fi
+		local i=1
+		while [ ! -z "${buffer}" ]
+		do
+			read -p "  => Alternative Name [NONE]: " buffer
+			if [ ! -z "${buffer}" ]
+			then
+				altname="${altname}\nDNS.${i}                           = ${buffer}"
+			fi
+			i=$(($i+1))
+		done
+	fi
+	
+	read -p " ==> Add Alternative IP Address [N/y]: " buffer
+	[ -z "${buffer}" ] && buffer="n"
+	if [[ "${buffer}" == "y" ]]
+	then
+		if [ -z "${altname}" ]
+		then
+			altname="subjectAltName                  = @alt_names"
+			altname="${altname}\n\n[alt_names]"
+		fi
+		local i=1
+		while [ ! -z "${buffer}" ]
+		do
+			read -p "  => Alternative IP Address [NONE]: " buffer
+			if [ ! -z "${buffer}" ]
+			then
+				altname="${altname}\nIP.${i}                            = ${buffer}"
+			fi
+			i=$(($i+1))
+		done
+	fi
+	
+	echo ${altname}
+}
+
 function initCA() {
+	local altname
 	printSubMenu "${NAME} CA Initialisation"
 	if [ -f ${PKI_PATH}/${NAME}/ssl.cnf ]
 	then
@@ -444,7 +499,7 @@ function initCA() {
 		return
 	fi
 	read -p " ==> Fully qualified Hostname [NONE]: " hostname
-	if [[ "$hostname" == "" ]]
+	if [ -z "$hostname" ]
 	then
 		echo "Error: Fully qualified Hostname cannot be empty"
 		read -p "Press [enter] to continue" DUMMY
@@ -452,13 +507,15 @@ function initCA() {
 	fi
 	echo
 	read -p " ==> Admin email [NONE]: " email
-	if [[ "$email" == "" ]]
+	if [ -z "$email" ]
 	then
 		echo "Error: email cannot be empty"
 		read -p "Press [enter] to continue" DUMMY
 		return
 	fi
 	echo
+	
+	altname=$(getAlternativeName)
 	
 	mkdir -p ${PKI_PATH}/${NAME}/{certs,newcerts,private,confs,crl,pem}
 	initConfig
@@ -473,6 +530,7 @@ function initCA() {
 	userdata="${userdata}emailAddress_default            = ${email}"
 	cat ${PKI_PATH}/${NAME}/ssl.cnf | tr -d '#' | \
 		sed -e "s/@USERDATA@/${userdata}/" \
+		-e "s/@ALTNAME@/${altname}/" \
 		> ${PKI_PATH}/${NAME}/ssl2.cnf
 	openssl req -config ${PKI_PATH}/${NAME}/ssl2.cnf -new -x509 -days 3650 -batch \
 		-key ${PKI_PATH}/${NAME}/private/${NAME}ca.key \
@@ -505,48 +563,48 @@ function deleteCA() {
 
 function initConfig() {
 	cat << 'EOF' > ${PKI_PATH}/${NAME}/ssl.cnf
-HOME                    = @HOME@
-RANDFILE                = @HOME@/.rand
+HOME                            = @HOME@
+RANDFILE                        = @HOME@/.rand
 
 [ca] 
-default_ca              = ca_default
+default_ca                      = ca_default
 
 [ca_default] 
-dir                     = @HOME@
-certs                   = $dir/certs
-crl_dir                 = $dir/crl
-database                = $dir/index.txt
-new_certs_dir           = $dir/newcerts
-certificate             = $dir/@NAME@ca.crt
-private_key             = $dir/private/@NAME@ca.key
-serial                  = $dir/serial
-crl                     = $dir/crl/@NAME@ca.crl
-crlnumber               = $dir/crlnumber
-crl_extensions          = crl_ext
-x509_extensions         = usr_cert
-name_opt                = ca_default
-cert_opt                = ca_default
-default_days            = 365
-default_crl_days        = 30
-default_md              = md5
-preserve                = no
-policy                  = policy_match
+dir                             = @HOME@
+certs                           = $dir/certs
+crl_dir                         = $dir/crl
+database                        = $dir/index.txt
+new_certs_dir                   = $dir/newcerts
+certificate                     = $dir/@NAME@ca.crt
+private_key                     = $dir/private/@NAME@ca.key
+serial                          = $dir/serial
+crl                             = $dir/crl/@NAME@ca.crl
+crlnumber                       = $dir/crlnumber
+crl_extensions                  = crl_ext
+x509_extensions                 = usr_cert
+name_opt                        = ca_default
+cert_opt                        = ca_default
+default_days                    = 365
+default_crl_days                = 30
+default_md                      = md5
+preserve                        = no
+policy                          = policy_match
 
 [policy_match] 
-countryName             = match
-stateOrProvinceName     = match
-organizationName        = match
-organizationalUnitName  = optional
-commonName              = supplied
-emailAddress            = optional
+countryName                     = match
+stateOrProvinceName             = match
+organizationName                = match
+organizationalUnitName          = optional
+commonName                      = supplied
+emailAddress                    = optional
 
 [req] 
-default_bits            = 1024
-default_keyfile         = privkey.pem
-distinguished_name      = req_distinguished_name
-attributes              = req_attributes
-x509_extensions         = v3_ca
-string_mask             = MASK:0x2002
+default_bits                    = 1024
+default_keyfile                 = privkey.pem
+distinguished_name              = req_distinguished_name
+attributes                      = req_attributes
+x509_extensions                 = v3_ca
+string_mask                     = MASK:0x2002
 
 [req_distinguished_name] 
 countryName                     = Country Name (2 letter code)
@@ -582,18 +640,21 @@ authorityKeyIdentifier          = keyid,issuer:always
 subjectKeyIdentifier            = hash
 authorityKeyIdentifier          = keyid:always,issuer:always
 basicConstraints                = CA:true
+keyUsage                        = keyEncipherment, dataEncipherment
+extendedKeyUsage                = serverAuth
+##@ALTNAME@
 
 [crl_ext]
 authorityKeyIdentifier=keyid:always,issuer:always
 
 [OCSP]
-basicConstraints        = CA:FALSE
-keyUsage                = digitalSignature
-extendedKeyUsage        = OCSPSigning
-issuerAltName           = issuer:copy
-subjectKeyIdentifier    = hash
-authorityKeyIdentifier  = keyid:always,issuer:always
-authorityInfoAccess     = OCSP;URI:@OCSPURL@
+basicConstraints                = CA:FALSE
+keyUsage                        = digitalSignature
+extendedKeyUsage                = OCSPSigning
+issuerAltName                   = issuer:copy
+subjectKeyIdentifier            = hash
+authorityKeyIdentifier          = keyid:always,issuer:always
+authorityInfoAccess             = OCSP;URI:@OCSPURL@
  
 [OCSP_SERVER]
 nsComment                       = "OpenSSL Generated Server Certificate"
@@ -646,10 +707,10 @@ do
 			exit 0
 			;;
 		c)
-			CFG_FILE=$OPTARG
+			CFG_FILE=${OPTARG}
 			;;
 		p)
-			PKI_PATH=$OPTARG
+			pkipath=${OPTARG}
 			;;
 		n)
 			NAME=$OPTARG
@@ -657,6 +718,8 @@ do
 		r)
 			REGEN_ONLY=1
 			;;
+		*)
+			"Unknow option: ${opt}"
 	esac
 done
 
@@ -677,6 +740,8 @@ fi
 
 clear
 [ -z "${NAME}" ] && changeName
+# Overwrite PKI path if option is provided.
+[ ! -z "${pkipath}" ] && PKI_PATH="${pkipath}"
 while true;
 do
 	printMenu
