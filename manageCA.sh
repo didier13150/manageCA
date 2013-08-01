@@ -1,7 +1,7 @@
 #!/bin/bash
 ################################################################################
 # Author: Didier Fabert
-# Rev 0.7.1
+# Rev 0.7.2
 ################################################################################
 COUNTRYNAME="FR"
 STATE="Languedoc-Roussillon"
@@ -507,12 +507,14 @@ function initCA() {
 		echo
 		echo "Just press [ENTER] to stop asking alternative"
 		echo
+		local i=1
 		if [ -z "${altname}" ]
 		then
 			altname="subjectAltName                  = @alt_names"
 			altname="${altname}\n\n[alt_names]"
+			altname="${altname}\nDNS.${i}                           = ${buffer}"
+			i=$(($i+1))
 		fi
-		local i=1
 		while [ ! -z "${buffer}" ]
 		do
 			read -p "  => Alternative Name [NONE]: " buffer
