@@ -1,7 +1,7 @@
 #!/bin/bash
 ################################################################################
 # Author: Didier Fabert
-# Rev 0.5
+# Rev 0.7.1
 ################################################################################
 COUNTRYNAME="FR"
 STATE="Languedoc-Roussillon"
@@ -52,9 +52,9 @@ function printMenu() {
 }
 
 function printSubMenu {
-        clear
+        [ -z "${2}" ] && clear
         echo "-----------------------------------------------------------------"
-        echo ${1}
+        echo -e "${1}"
         echo "-----------------------------------------------------------------"
         echo
 }
@@ -198,7 +198,6 @@ function addUser() {
 	if [[ "${usage}" == "ocsp" ]]
 	then
 		extension="-extensions OCSP"
-		altname=""
 	else
 		read -p "Add OCSP Extension to Certificate ? [Y/n]: " buffer
 		[ -z "${buffer}" ] && buffer="y"
@@ -207,16 +206,24 @@ function addUser() {
 			if [[ "${usage}" == "server" ]]
 			then
 				extension="-extensions OCSP_SERVER"
-				altname=$(getAlternativeName)
 			else
 				extension="-extensions OCSP_CLIENT"
-				altname=""
 			fi
 		else
 			extension=""
-			altname=""
 		fi
 	fi
+	
+	if [ -f "${PKI_PATH}/${NAME}/private/${user}-${email}.key" ]
+	then
+		echo -e "\033[31m !!! A User with same common name and same email already exists !!! \033[0m"
+		read -p "Press [enter] to continue" DUMMY
+		return
+	fi
+	
+	comfirmExec "${usage} certificate" "${hostname}" "${email}" "${altname}"
+	retval=$?
+	[ ${retval} -ne 0 ] && return
 	
 	openssl genrsa -out ${PKI_PATH}/${NAME}/private/${user}-${email}.key 2048 \
 		1>/dev/null 2>&1
@@ -230,7 +237,6 @@ function addUser() {
 	userdata="${userdata}emailAddress_default            = ${email}"
 	cat ${PKI_PATH}/${NAME}/ssl.cnf | tr -d '#' | \
 		sed -e "s/@USERDATA@/${userdata}/" \
-		-e "s/@ALTNAME@/${altname}/" \
 		> ${PKI_PATH}/${NAME}/ssl2.cnf
 	openssl req -config ${PKI_PATH}/${NAME}/ssl2.cnf -new -nodes -batch \
 		-out ${PKI_PATH}/${NAME}/certs/${user}-${email}.csr \
@@ -280,7 +286,7 @@ function webUser() {
 	echo
 	[ -f ${PKI_PATH}/${NAME}/certs/${user}-${email}_browser_cert.p12 ] \
 		&& echo "Web certificate: ${PKI_PATH}/${NAME}/certs/${user}-${email}_browser_cert.p12" \
-		|| echo "Error encoured"
+		|| echo -e "\033[31m !!! Error encoured !!! \033[0m"
 	echo
 	read -p "Press [enter] to continue" DUMMY
 }
@@ -440,57 +446,36 @@ function changeName() {
 	read -p " ==> Select New CA name [NONE]: " NAME
 }
 
-function getAlternativeName() {
+function comfirmExec() {
+	local type=${1}
+	local hostname=${2}
+	local email=${3}
+	local altname=${4}
+	local summary
 	local buffer
-	local altname
 	
-	read -p " ==> Add Alternative Name [N/y]: " buffer
-	[ -z "${buffer}" ] && buffer="n"
-	if [[ "${buffer}" == "y" ]]
+	summary="Hostname:     ${hostname}"
+	summary="${summary}\nAdmin email:  ${email}"
+	if [ ! -z "${altname}" ]
 	then
-		if [ -z "${altname}" ]
-		then
-			altname="subjectAltName                  = @alt_names"
-			altname="${altname}\n\n[alt_names]"
-		fi
-		local i=1
-		while [ ! -z "${buffer}" ]
-		do
-			read -p "  => Alternative Name [NONE]: " buffer
-			if [ ! -z "${buffer}" ]
-			then
-				altname="${altname}\nDNS.${i}                           = ${buffer}"
-			fi
-			i=$(($i+1))
-		done
+		summary="${summary}\nAlter name:"
+		summary="${summary}\n$(echo -e ${altname} | grep '^DNS' | awk -F '=' '{print $2}')"
+		summary="${summary}\n$(echo -e ${altname} | grep '^IP' | awk -F '=' '{print $2}')"
 	fi
-	
-	read -p " ==> Add Alternative IP Address [N/y]: " buffer
-	[ -z "${buffer}" ] && buffer="n"
-	if [[ "${buffer}" == "y" ]]
+	printSubMenu "$summary" "noclear"
+	echo
+	read -p " Create ${type} with this parameters ? [Y/n]: " buffer
+	[ -z "${buffer}" ] && buffer="y"
+	if [[ "${buffer}" != "y" ]]
 	then
-		if [ -z "${altname}" ]
-		then
-			altname="subjectAltName                  = @alt_names"
-			altname="${altname}\n\n[alt_names]"
-		fi
-		local i=1
-		while [ ! -z "${buffer}" ]
-		do
-			read -p "  => Alternative IP Address [NONE]: " buffer
-			if [ ! -z "${buffer}" ]
-			then
-				altname="${altname}\nIP.${i}                            = ${buffer}"
-			fi
-			i=$(($i+1))
-		done
+		return 1
 	fi
-	
-	echo ${altname}
+	return 0
 }
 
 function initCA() {
 	local altname
+	local buffer
 	printSubMenu "${NAME} CA Initialisation"
 	if [ -f ${PKI_PATH}/${NAME}/ssl.cnf ]
 	then
@@ -515,22 +500,76 @@ function initCA() {
 	fi
 	echo
 	
-	altname=$(getAlternativeName)
+	read -p " ==> Add Alternative Name [N/y]: " buffer
+	[ -z "${buffer}" ] && buffer="n"
+	if [[ "${buffer}" == "y" ]]
+	then
+		echo
+		echo "Just press [ENTER] to stop asking alternative"
+		echo
+		if [ -z "${altname}" ]
+		then
+			altname="subjectAltName                  = @alt_names"
+			altname="${altname}\n\n[alt_names]"
+		fi
+		local i=1
+		while [ ! -z "${buffer}" ]
+		do
+			read -p "  => Alternative Name [NONE]: " buffer
+			if [ ! -z "${buffer}" ]
+			then
+				altname="${altname}\nDNS.${i}                           = ${buffer}"
+			fi
+			i=$(($i+1))
+		done
+	fi
+	echo
+	
+	read -p " ==> Add Alternative IP Address [N/y]: " buffer
+	[ -z "${buffer}" ] && buffer="n"
+	if [[ "${buffer}" == "y" ]]
+	then
+		echo
+		echo "Just press [ENTER] to stop asking alternative"
+		echo
+		if [ -z "${altname}" ]
+		then
+			altname="subjectAltName                  = @alt_names"
+			altname="${altname}\n\n[alt_names]"
+		fi
+		local i=1
+		while [ ! -z "${buffer}" ]
+		do
+			read -p "  => Alternative IP Address [NONE]: " buffer
+			if [ ! -z "${buffer}" ]
+			then
+				altname="${altname}\nIP.${i}                            = ${buffer}"
+			fi
+			i=$(($i+1))
+		done
+	fi
+	echo
+	
+	comfirmExec "certificate authority" "${hostname}" "${email}" "${altname}"
+	local retval=$?
+	[ ${retval} -ne 0 ] && return
+	
 	
 	mkdir -p ${PKI_PATH}/${NAME}/{certs,newcerts,private,confs,crl,pem}
-	initConfig
+	initConfig "${altname}"
+	echo
+	
 	touch ${PKI_PATH}/${NAME}/index.txt
 	[ -f ${PKI_PATH}/${NAME}/serial ] || echo 01 > ${PKI_PATH}/${NAME}/serial
 	[ -f ${PKI_PATH}/${NAME}/crlnumber ] || echo 01 > ${PKI_PATH}/${NAME}/crlnumber
 	[ -f ${PKI_PATH}/${NAME}/private/${NAME}ca.key ] || \
 		openssl genrsa -out ${PKI_PATH}/${NAME}/private/${NAME}ca.key 2048 \
 		1>/dev/null 2>&1
-	local userdata="organizationalUnitName_default  = Admin\n"
+	local userdata="organizationalUnitName_default  = Certificate Authority\n"
 	userdata="${userdata}commonName_default              = ${hostname}\n"
 	userdata="${userdata}emailAddress_default            = ${email}"
 	cat ${PKI_PATH}/${NAME}/ssl.cnf | tr -d '#' | \
 		sed -e "s/@USERDATA@/${userdata}/" \
-		-e "s/@ALTNAME@/${altname}/" \
 		> ${PKI_PATH}/${NAME}/ssl2.cnf
 	openssl req -config ${PKI_PATH}/${NAME}/ssl2.cnf -new -x509 -days 3650 -batch \
 		-key ${PKI_PATH}/${NAME}/private/${NAME}ca.key \
@@ -550,18 +589,26 @@ function initCA() {
 
 function deleteCA() {
 	printSubMenu "Deleting CA"
-	read -p " ==> Are you sure ? Type uppercase YES to confirm: " CONFIRM
-	if [[ "${CONFIRM}" == "YES" ]]
+	if [ -d ${PKI_PATH}/${NAME} ]
 	then
-		rm -rf ${PKI_PATH}/${NAME}
-		echo
-		echo "CA completely deleted"
+		read -p " ==> Are you sure ? Type uppercase YES to confirm: " CONFIRM
+		if [[ "${CONFIRM}" == "YES" ]]
+		then
+			rm -rf ${PKI_PATH}/${NAME}
+			echo
+			echo "CA completely deleted"
+			echo
+			read -p "Press [enter] to continue" DUMMY
+		fi
+	else
+		echo -e "\033[31m !!! CA not exists !!! \033[0m"
 		echo
 		read -p "Press [enter] to continue" DUMMY
 	fi
 }
 
 function initConfig() {
+	local altname=${1}
 	cat << 'EOF' > ${PKI_PATH}/${NAME}/ssl.cnf
 HOME                            = @HOME@
 RANDFILE                        = @HOME@/.rand
@@ -639,10 +686,10 @@ authorityKeyIdentifier          = keyid,issuer:always
 [v3_ca] 
 subjectKeyIdentifier            = hash
 authorityKeyIdentifier          = keyid:always,issuer:always
-basicConstraints                = CA:true
-keyUsage                        = keyEncipherment, dataEncipherment
+basicConstraints                = CA:TRUE
+keyUsage                        = nonRepudiation, digitalSignature, keyEncipherment, dataEncipherment
 extendedKeyUsage                = serverAuth
-##@ALTNAME@
+@ALTNAME@
 
 [crl_ext]
 authorityKeyIdentifier=keyid:always,issuer:always
@@ -687,9 +734,9 @@ EOF
 		-e "s#@CITY@#${CITY}#g" \
 		-e "s#@ORGANISATION@#${COMPANY}#g" \
 		-e "s#@OCSPURL@#${OCSP_URL}#g" \
+		-e "s#@ALTNAME@#${altname}#g" \
 		${PKI_PATH}/${NAME}/ssl.cnf
 }
-
 #Main program
 
 
