@@ -1,7 +1,7 @@
 #!/bin/bash
 ################################################################################
 # Author: Didier Fabert
-# Rev 0.7.2
+# Rev 0.7.3
 ################################################################################
 COUNTRYNAME="FR"
 STATE="Languedoc-Roussillon"
@@ -13,6 +13,8 @@ PKI_PATH="/etc/pki"
 NAME=""
 CFG_FILE="/etc/manageCA.conf"
 REGEN_ONLY=0
+KEY_SIZE="2048"
+MESSAGE_DIGEST="sha256"
 
 function printUsage() {
 	echo "Usage: $(basename $0)"
@@ -25,6 +27,8 @@ function printHelp() {
 	echo -e "  -p <PATH>     Path for PKI [/etc/pki]"
 	echo -e "  -n <NAME>     CA Name [None]"
 	echo -e "  -r            Regenerate CRL only. -n option is mandatory."
+	echo -e "  -k <INT>      Default key size [2048]"
+	echo -e "  -d <DIGEST>   Message Digest [sha256]"
 }
 
 function printMenu() {
@@ -142,7 +146,7 @@ function saveCfg() {
 		echo >> ${CFG_FILE}
 	else
 		echo
-		echo "Error: ${CFG_FILE} is not writable for you"
+		echo -e "\033[31m !!! Error: ${CFG_FILE} is not writable for you !!! \033[0m"
 		read -p "Press [enter] to continue" DUMMY
 	fi
 }
@@ -154,7 +158,6 @@ function testCA() {
 		echo
 		echo -e "\033[31m !!! CA not found, initialize CA first !!! \033[0m"
 		echo
-		read -p "Press any key to switch back to the previous menu: "
 		return 1
 	fi
 	return 0
@@ -172,7 +175,7 @@ function addUser() {
 	local usage="client"
 	local buffer
 	local userdata
-	printSubMenu "Create a client certificate"
+	printSubMenu "Create certificate"
 	read -p " ==> User name [NONE]: " user
 	if [[ "${user}" == "" ]]
 	then
@@ -221,12 +224,24 @@ function addUser() {
 		return
 	fi
 	
-	comfirmExec "${usage} certificate" "${hostname}" "${email}" "${altname}"
+	comfirmExec "${usage} certificate" "${user}" "${email}" "${altname}"
 	retval=$?
 	[ ${retval} -ne 0 ] && return
+	echo
 	
-	openssl genrsa -out ${PKI_PATH}/${NAME}/private/${user}-${email}.key 2048 \
+	echo -n "Generate ${KEY_SIZE} bits key:"
+	openssl genrsa -out ${PKI_PATH}/${NAME}/private/${user}-${email}.key ${KEY_SIZE} \
 		1>/dev/null 2>&1
+	retval=$?
+	if [ ${retval} -eq 0 ]
+	then
+		echo -e "\033[32m SUCCESS \033[0m"
+	else
+		echo -e "\033[31m FAILURE \033[0m"
+		rm -f ${PKI_PATH}/${NAME}/private/${user}-${email}.key
+		read -p "Press [enter] to continue" DUMMY
+		return
+	fi
 	if [[ "${usage}" != "server" ]]
 	then
 		userdata="organizationalUnitName_default  = ${oun}\n"
@@ -235,21 +250,80 @@ function addUser() {
 	fi
 	userdata="${userdata}commonName_default              = ${user}\n"
 	userdata="${userdata}emailAddress_default            = ${email}"
+	
+	echo -n "Prepare config file: "
 	cat ${PKI_PATH}/${NAME}/ssl.cnf | tr -d '#' | \
 		sed -e "s/@USERDATA@/${userdata}/" \
 		> ${PKI_PATH}/${NAME}/ssl2.cnf
+	retval=$?
+	if [ ${retval} -eq 0 ]
+	then
+		echo -e "\033[32m SUCCESS \033[0m"
+	else
+		echo -e "\033[31m FAILURE \033[0m"
+		rm -f ${PKI_PATH}/${NAME}/private/${user}-${email}.key
+		rm -f ${PKI_PATH}/${NAME}/ssl2.cnf
+		read -p "Press [enter] to continue" DUMMY
+		return
+	fi
+	echo -n "Create certificate request: "
 	openssl req -config ${PKI_PATH}/${NAME}/ssl2.cnf -new -nodes -batch \
 		-out ${PKI_PATH}/${NAME}/certs/${user}-${email}.csr \
 		-key ${PKI_PATH}/${NAME}/private/${user}-${email}.key
+	retval=$?
+	if [ ${retval} -eq 0 ]
+	then
+		echo -e "\033[32m SUCCESS \033[0m"
+	else
+		echo -e "\033[31m FAILURE \033[0m"
+		rm -f ${PKI_PATH}/${NAME}/private/${user}-${email}.key
+		rm -f ${PKI_PATH}/${NAME}/ssl2.cnf
+		rm -f ${PKI_PATH}/${NAME}/certs/${user}-${email}.csr
+		read -p "Press [enter] to continue" DUMMY
+		return
+	fi
+	echo "Start Signing certificate request"
 	openssl ca -config ${PKI_PATH}/${NAME}/ssl2.cnf \
 		-cert ${PKI_PATH}/${NAME}/${NAME}ca.crt ${extension} \
 		-out ${PKI_PATH}/${NAME}/certs/${user}-${email}.crt \
 		-outdir ${PKI_PATH}/${NAME}/certs \
 		-infiles ${PKI_PATH}/${NAME}/certs/${user}-${email}.csr
+	echo -n "Sign certificate request: "
+	if [ -s ${PKI_PATH}/${NAME}/certs/${user}-${email}.crt ]
+	then
+		echo -e "\033[32m SUCCESS \033[0m"
+	else
+		echo -e "\033[31m FAILURE \033[0m"
+		rm -f ${PKI_PATH}/${NAME}/private/${user}-${email}.key
+		rm -f ${PKI_PATH}/${NAME}/ssl2.cnf
+		rm -f ${PKI_PATH}/${NAME}/certs/${user}-${email}.csr
+		rm -f ${PKI_PATH}/${NAME}/certs/${user}-${email}.crt
+		read -p "Press [enter] to continue" DUMMY
+		return
+	fi
+	echo -n "Create pem file which contains both key and certificate: "
 	cat ${PKI_PATH}/${NAME}/certs/${user}-${email}.crt \
 		${PKI_PATH}/${NAME}/private/${user}-${email}.key \
 			> ${PKI_PATH}/${NAME}/pem/${user}-${email}.pem
+	retval=$?
+	if [ ${retval} -eq 0 ]
+	then
+		echo -e "\033[32m SUCCESS \033[0m"
+	else
+		echo -e "\033[31m FAILURE \033[0m"
+		return
+	fi
+	echo -n "Save config file for ${user} (${email}) on confs directory: "
 	mv ${PKI_PATH}/${NAME}/ssl2.cnf ${PKI_PATH}/${NAME}/confs/${user}-${email}-ssl.cnf
+	retval=$?
+	if [ ${retval} -eq 0 ]
+	then
+		echo -e "\033[32m SUCCESS \033[0m"
+	else
+		echo -e "\033[31m FAILURE \033[0m"
+		read -p "Press [enter] to continue" DUMMY
+		return
+	fi
 	read -p "Press [enter] to continue" DUMMY
 }
 
@@ -282,11 +356,17 @@ function webUser() {
 			-in ${PKI_PATH}/${NAME}/certs/${user}-${email}.crt \
 			-CAfile ${PKI_PATH}/${NAME}/${NAME}ca.crt \
 			-out ${PKI_PATH}/${NAME}/certs/${user}-${email}_browser_cert.p12
+	else
+		echo -e "\033[31m !!! Error: Certificate not found !!! \033[0m"
 	fi
-	echo
-	[ -f ${PKI_PATH}/${NAME}/certs/${user}-${email}_browser_cert.p12 ] \
-		&& echo "Web certificate: ${PKI_PATH}/${NAME}/certs/${user}-${email}_browser_cert.p12" \
-		|| echo -e "\033[31m !!! Error encoured !!! \033[0m"
+	echo -n "Create web certificate"
+	if [ -f ${PKI_PATH}/${NAME}/certs/${user}-${email}_browser_cert.p12 ]
+	then
+		echo -e "\033[32m SUCCESS \033[0m"
+		echo "Web certificate: ${PKI_PATH}/${NAME}/certs/${user}-${email}_browser_cert.p12"
+	else
+		echo -e "\033[31m FAILURE \033[0m"
+	fi
 	echo
 	read -p "Press [enter] to continue" DUMMY
 }
@@ -317,13 +397,32 @@ function renewUser() {
 	fi
 	echo
 	revokeUser ${user} ${email}
+	echo -n "Renew certificate: "
 	openssl ca -config ${PKI_PATH}/${NAME}/confs/${user}-${email}-ssl.cnf \
         -out ${PKI_PATH}/${NAME}/certs/${user}-${email}.crt \
         -outdir ${PKI_PATH}/${NAME}/certs \
         -infiles ${PKI_PATH}/${NAME}/certs/${user}-${email}.csr
+	retval=$?
+	if [ ${retval} -eq 0 ]
+	then
+		echo -e "\033[32m SUCCESS \033[0m"
+	else
+		echo -e "\033[31m FAILURE \033[0m"
+		return
+	fi
+        
+	echo -n "Regenerate pem: "
 	cat ${PKI_PATH}/${NAME}/certs/${user}-${email}.crt \
 		${PKI_PATH}/${NAME}/private/${user}-${email}.key \
 			> ${PKI_PATH}/${NAME}/pem/${user}-${email}.pem
+	retval=$?
+	if [ ${retval} -eq 0 ]
+	then
+		echo -e "\033[32m SUCCESS \033[0m"
+	else
+		echo -e "\033[31m FAILURE \033[0m"
+		return
+	fi
 	echo
 	read -p "Press [enter] to continue" DUMMY
 }
@@ -352,22 +451,52 @@ function revokeUser() {
 		return
 	fi
 	echo
+	
+	echo -n "Revoke certificate: "
 	openssl ca -revoke ${PKI_PATH}/${NAME}/certs/${user}-${email}.crt \
 		-config ${PKI_PATH}/${NAME}/ssl.cnf
+	retval=$?
+	if [ ${retval} -eq 0 ]
+	then
+		echo -e "\033[32m SUCCESS \033[0m"
+	else
+		echo -e "\033[31m FAILURE \033[0m"
+		return
+	fi
+	
 	# Save old certificate
+	echo -n "Save old certificate: "
 	x=1
 	while [ -f "${PKI_PATH}/${NAME}/certs/${user}-${email}.revoked.$x.crt" ]
 	do
 		x=$(( $x + 1 ))
 	done
-		cp ${PKI_PATH}/${NAME}/certs/${user}-${email}.crt ${PKI_PATH}/${NAME}/certs/${user}-${email}.revoked.$x.crt
+	cp ${PKI_PATH}/${NAME}/certs/${user}-${email}.crt ${PKI_PATH}/${NAME}/certs/${user}-${email}.revoked.$x.crt
+	retval=$?
+	if [ ${retval} -eq 0 ]
+	then
+		echo -e "\033[32m SUCCESS \033[0m"
+	else
+		echo -e "\033[31m FAILURE \033[0m"
+		return
+	fi
 	
+	echo -n "Save old pem: "
 	x=1
 	while [ -f "${PKI_PATH}/${NAME}/pem/${user}-${email}.revoked.$x.pem" ]
 	do
 		x=$(( $x + 1 ))
 	done
 	cp ${PKI_PATH}/${NAME}/pem/${user}-${email}.pem ${PKI_PATH}/${NAME}/pem/${user}-${email}.revoked.$x.pem
+	retval=$?
+	if [ ${retval} -eq 0 ]
+	then
+		echo -e "\033[32m SUCCESS \033[0m"
+	else
+		echo -e "\033[31m FAILURE \033[0m"
+		return
+	fi
+	
 	echo
 	regenCRL
 	read -p "Press [enter] to continue" DUMMY
@@ -380,6 +509,7 @@ function regenCRL() {
 	then
 		return
 	fi
+	
 	openssl ca -gencrl -config ${PKI_PATH}/${NAME}/ssl.cnf \
 		-out ${PKI_PATH}/${NAME}/crl/${NAME}ca.crl
 	retval=$?
@@ -389,7 +519,9 @@ function regenCRL() {
 		echo "CRL regenerated."
 	else
 		echo "Error encoured during CRL regeneration process !!!"
+		return 1
 	fi
+	return 0
 }
 
 function regenerateCRL() {
@@ -454,7 +586,7 @@ function comfirmExec() {
 	local summary
 	local buffer
 	
-	summary="Hostname:     ${hostname}"
+	summary="CN:     ${hostname}"
 	summary="${summary}\nAdmin email:  ${email}"
 	if [ ! -z "${altname}" ]
 	then
@@ -464,7 +596,7 @@ function comfirmExec() {
 	fi
 	printSubMenu "$summary" "noclear"
 	echo
-	read -p " Create ${type} with this parameters ? [Y/n]: " buffer
+	read -p " ==> Create ${type} with this parameters ? [Y/n]: " buffer
 	[ -z "${buffer}" ] && buffer="y"
 	if [[ "${buffer}" != "y" ]]
 	then
@@ -479,7 +611,7 @@ function initCA() {
 	printSubMenu "${NAME} CA Initialisation"
 	if [ -f ${PKI_PATH}/${NAME}/ssl.cnf ]
 	then
-		read -p "!!! Already initalized, delete CA first !!!"
+		echo -e "\033[31m !!! Already initalized, delete CA first !!! \033[0m"
 		read -p "Press [enter] to continue" DUMMY
 		return
 	fi
@@ -512,7 +644,7 @@ function initCA() {
 		then
 			altname="subjectAltName                  = @alt_names"
 			altname="${altname}\n\n[alt_names]"
-			altname="${altname}\nDNS.${i}                           = ${buffer}"
+			altname="${altname}\nDNS.${i}                           = ${hostname}"
 			i=$(($i+1))
 		fi
 		while [ ! -z "${buffer}" ]
@@ -557,35 +689,162 @@ function initCA() {
 	[ ${retval} -ne 0 ] && return
 	
 	
+	echo -n "Create CA Tree:"
 	mkdir -p ${PKI_PATH}/${NAME}/{certs,newcerts,private,confs,crl,pem}
+	retval=$?
+	if [ ${retval} -eq 0 ]
+	then
+		echo -e "\033[32m SUCCESS \033[0m"
+	else
+		echo -e "\033[31m FAILURE \033[0m"
+		rm -rf ${PKI_PATH}/${NAME}
+		read -p "Press [enter] to continue" DUMMY
+		return
+	fi
 	initConfig "${altname}"
 	echo
 	
+	echo -n "Init CA index:"
 	touch ${PKI_PATH}/${NAME}/index.txt
-	[ -f ${PKI_PATH}/${NAME}/serial ] || echo 01 > ${PKI_PATH}/${NAME}/serial
-	[ -f ${PKI_PATH}/${NAME}/crlnumber ] || echo 01 > ${PKI_PATH}/${NAME}/crlnumber
-	[ -f ${PKI_PATH}/${NAME}/private/${NAME}ca.key ] || \
-		openssl genrsa -out ${PKI_PATH}/${NAME}/private/${NAME}ca.key 2048 \
+	retval=$?
+	if [ ${retval} -eq 0 ]
+	then
+		echo -e "\033[32m SUCCESS \033[0m"
+	else
+		echo -e "\033[31m FAILURE \033[0m"
+		rm -rf ${PKI_PATH}/${NAME}
+		read -p "Press [enter] to continue" DUMMY
+		return
+	fi
+	if [ ! -f ${PKI_PATH}/${NAME}/serial ]
+	then
+		echo -n "Init CA serial:"
+		echo 01 > ${PKI_PATH}/${NAME}/serial
+		retval=$?
+		if [ ${retval} -eq 0 ]
+		then
+			echo -e "\033[32m SUCCESS \033[0m"
+		else
+			echo -e "\033[31m FAILURE \033[0m"
+			rm -rf ${PKI_PATH}/${NAME}
+			read -p "Press [enter] to continue" DUMMY
+			return
+		fi
+	fi
+	if [ ! -f ${PKI_PATH}/${NAME}/crlnumber ]
+	then
+		echo -n "Init CA CRL:"
+		echo 01 > ${PKI_PATH}/${NAME}/crlnumber
+		retval=$?
+		if [ ${retval} -eq 0 ]
+		then
+			echo -e "\033[32m SUCCESS \033[0m"
+		else
+			echo -e "\033[31m FAILURE \033[0m"
+			rm -rf ${PKI_PATH}/${NAME}
+			read -p "Press [enter] to continue" DUMMY
+			return
+		fi
+	fi
+	
+	if [ ! -f ${PKI_PATH}/${NAME}/private/${NAME}ca.key ]
+	then
+		echo -n "Generate ${KEY_SIZE} bits key:"
+		openssl genrsa -out ${PKI_PATH}/${NAME}/private/${NAME}ca.key ${KEY_SIZE} \
 		1>/dev/null 2>&1
+		retval=$?
+		if [ ${retval} -eq 0 ]
+		then
+			echo -e "\033[32m SUCCESS \033[0m"
+		else
+			echo -e "\033[31m FAILURE \033[0m"
+			rm -rf ${PKI_PATH}/${NAME}
+			read -p "Press [enter] to continue" DUMMY
+			return
+		fi
+	fi
 	local userdata="organizationalUnitName_default  = Certificate Authority\n"
 	userdata="${userdata}commonName_default              = ${hostname}\n"
 	userdata="${userdata}emailAddress_default            = ${email}"
+	
+	echo -n "Prepare CA config file: "
 	cat ${PKI_PATH}/${NAME}/ssl.cnf | tr -d '#' | \
 		sed -e "s/@USERDATA@/${userdata}/" \
 		> ${PKI_PATH}/${NAME}/ssl2.cnf
+	retval=$?
+	if [ ${retval} -eq 0 ]
+	then
+		echo -e "\033[32m SUCCESS \033[0m"
+	else
+		echo -e "\033[31m FAILURE \033[0m"
+		rm -rf ${PKI_PATH}/${NAME}
+		read -p "Press [enter] to continue" DUMMY
+		return
+	fi
+	
+	echo -n "Create CA:"
 	openssl req -config ${PKI_PATH}/${NAME}/ssl2.cnf -new -x509 -days 3650 -batch \
 		-key ${PKI_PATH}/${NAME}/private/${NAME}ca.key \
 		-out ${PKI_PATH}/${NAME}/${NAME}ca.crt -extensions v3_ca
+	retval=$?
+	if [ ${retval} -eq 0 ]
+	then
+		echo -e "\033[32m SUCCESS \033[0m"
+	else
+		echo -e "\033[31m FAILURE \033[0m"
+		rm -rf ${PKI_PATH}/${NAME}
+		read -p "Press [enter] to continue" DUMMY
+		return
+	fi
+	
+	echo -n "Save CA config file: "
 	mv ${PKI_PATH}/${NAME}/ssl2.cnf ${PKI_PATH}/${NAME}/confs/ca.cnf
-	[ -f ${PKI_PATH}/${NAME}/crl/${NAME}ca.crl ] || regenCRL \
-		-config ${PKI_PATH}/${NAME}/ssl.cnf -out ${PKI_PATH}/${NAME}/crl/${NAME}ca.crl
+	retval=$?
+	if [ ${retval} -eq 0 ]
+	then
+		echo -e "\033[32m SUCCESS \033[0m"
+	else
+		echo -e "\033[31m FAILURE \033[0m"
+		rm -rf ${PKI_PATH}/${NAME}
+		read -p "Press [enter] to continue" DUMMY
+		return
+	fi
+	
+	if [ ! -f ${PKI_PATH}/${NAME}/crl/${NAME}ca.crl ]
+	then
+		echo -n "Generate CRL: "
+		regenCRL \
+		-config ${PKI_PATH}/${NAME}/ssl.cnf -out ${PKI_PATH}/${NAME}/crl/${NAME}ca.crl 1>/dev/null 2>&1
+		retval=$?
+		if [ ${retval} -eq 0 ]
+		then
+			echo -e "\033[32m SUCCESS \033[0m"
+		else
+			echo -e "\033[31m FAILURE \033[0m"
+			rm -rf ${PKI_PATH}/${NAME}
+			read -p "Press [enter] to continue" DUMMY
+			return
+		fi
+	fi
+	echo -n "Link CRL to Hash: "
 	local hash=`openssl crl -hash -noout -in ${PKI_PATH}/${NAME}/crl/${NAME}ca.crl`
 	ln -s ${PKI_PATH}/${NAME}/crl/${NAME}ca.crl ${PKI_PATH}/${NAME}/crl/$hash.r0
+	retval=$?
+	if [ ${retval} -eq 0 ]
+	then
+		echo -e "\033[32m SUCCESS \033[0m"
+	else
+		echo -e "\033[31m FAILURE \033[0m"
+		rm -rf ${PKI_PATH}/${NAME}
+		read -p "Press [enter] to continue" DUMMY
+		return
+	fi
+	
 	echo
 	echo "CA initialized"
 	echo
-	openssl x509 -in ${PKI_PATH}/${NAME}/${NAME}ca.crt -noout -text
-	echo
+	#openssl x509 -in ${PKI_PATH}/${NAME}/${NAME}ca.crt -noout -text
+	#echo
 	read -p "Press [enter] to continue" DUMMY
 }
 
@@ -635,9 +894,11 @@ name_opt                        = ca_default
 cert_opt                        = ca_default
 default_days                    = 365
 default_crl_days                = 30
-default_md                      = md5
+default_md                      = @MESSAGEDIGEST@
 preserve                        = no
 policy                          = policy_match
+copy_extensions                 = copy
+default_bits                    = @KEYSIZE@
 
 [policy_match] 
 countryName                     = match
@@ -648,11 +909,13 @@ commonName                      = supplied
 emailAddress                    = optional
 
 [req] 
-default_bits                    = 1024
+default_bits                    = @KEYSIZE@
+default_md                      = @MESSAGEDIGEST@
 default_keyfile                 = privkey.pem
 distinguished_name              = req_distinguished_name
 attributes                      = req_attributes
-x509_extensions                 = v3_ca
+x509_extensions                 = v3_req
+req_extensions                  = v3_req
 string_mask                     = MASK:0x2002
 
 [req_distinguished_name] 
@@ -685,16 +948,18 @@ nsComment                       = "OpenSSL Generated Certificate"
 subjectKeyIdentifier            = hash
 authorityKeyIdentifier          = keyid,issuer:always
 
+[v3_req] 
+subjectKeyIdentifier            = hash
+basicConstraints                = CA:FALSE
+
 [v3_ca] 
 subjectKeyIdentifier            = hash
 authorityKeyIdentifier          = keyid:always,issuer:always
 basicConstraints                = CA:TRUE
-keyUsage                        = nonRepudiation, digitalSignature, keyEncipherment, dataEncipherment
-extendedKeyUsage                = serverAuth
 @ALTNAME@
 
 [crl_ext]
-authorityKeyIdentifier=keyid:always,issuer:always
+authorityKeyIdentifier          = keyid:always,issuer:always
 
 [OCSP]
 basicConstraints                = CA:FALSE
@@ -711,7 +976,7 @@ subjectKeyIdentifier            = hash
 authorityKeyIdentifier          = keyid,issuer:always
 issuerAltName                   = issuer:copy
 basicConstraints                = critical,CA:FALSE
-keyUsage                        = digitalSignature, nonRepudiation, keyEncipherment
+keyUsage                        = digitalSignature, nonRepudiation, keyEncipherment, keyCertSign, cRLSign
 nsCertType                      = server
 extendedKeyUsage                = serverAuth
 authorityInfoAccess             = OCSP;URI:@OCSPURL@
@@ -736,14 +1001,16 @@ EOF
 		-e "s#@CITY@#${CITY}#g" \
 		-e "s#@ORGANISATION@#${COMPANY}#g" \
 		-e "s#@OCSPURL@#${OCSP_URL}#g" \
+		-e "s#@KEYSIZE@#${KEY_SIZE}#g" \
 		-e "s#@ALTNAME@#${altname}#g" \
+		-e "s#@MESSAGEDIGEST@#${MESSAGE_DIGEST}#g" \
 		${PKI_PATH}/${NAME}/ssl.cnf
 }
 #Main program
 
 
 # process command line arguments
-while getopts "?hurp:n:c:" opt
+while getopts "?hurp:n:c:k:d:" opt
 do
 	case "${opt}" in
 		u)
@@ -762,10 +1029,22 @@ do
 			pkipath=${OPTARG}
 			;;
 		n)
-			NAME=$OPTARG
+			NAME=${OPTARG}
 			;;
 		r)
 			REGEN_ONLY=1
+			;;
+		k)
+			if [ ${OPTARG} -gt ${KEY_SIZE} ]
+			then
+				KEY_SIZE=${OPTARG}
+			else
+				echo "Error: Key size must be greater than ${KEY_SIZE}."
+				exit 1
+			fi
+			;;
+		d)
+			MESSAGE_DIGEST=${OPTARG}
 			;;
 		*)
 			"Unknow option: ${opt}"
