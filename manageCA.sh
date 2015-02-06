@@ -13,7 +13,7 @@ PKI_PATH="/etc/pki"
 NAME=""
 CFG_FILE="/etc/manageCA.conf"
 REGEN_ONLY=0
-KEY_SIZE="2048"
+KEY_SIZE="4096"
 MESSAGE_DIGEST="sha256"
 
 function printUsage() {
